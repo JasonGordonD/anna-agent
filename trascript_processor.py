@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 import json
 from pathlib import Path
-from profile_builder import load_long_term_profile
+from schema_loader import load_schema
 
 app = Flask(__name__)
 
@@ -14,9 +14,9 @@ VOICE_ID = "qLnOIbrUXZ6axFL6mHX7"
 OUTPUT_FILE = Path("anna_output.mp3")
 LOG_FILE = Path("session_log.json")
 
-SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
+SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co/rest/v1/session_logs"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
-SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
+SUPABASE_LOG_ENDPOINT = SUPABASE_URL
 
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
@@ -42,10 +42,15 @@ def send_to_supabase(log_entry):
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
-    response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
-    print("DEBUG: Sent to Supabase with code", response.status_code)
+    try:
+        response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
+        print("DEBUG: Supabase response code:", response.status_code)
+        if response.status_code != 201:
+            print("⚠️ Supabase insert failed:", response.text)
+    except Exception as e:
+        print("❌ Supabase log error:", e)
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def health():
     return "Anna agent is running."
 
@@ -63,48 +68,27 @@ def speak():
         prompt = build_prompt(memory)
         text_to_speak = f"{prompt}\n\n{user_input}"
 
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": API_KEY
+        # Instead of generating audio, return the transcript (text_to_speak) as JSON
+        # This focuses on transcripts, not audio files
+        save_memory(memory)
+
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_input": user_input,
+            "ai_summary": "Auto summary TBD",
+            "trust_level": memory["trust_level"],
+            "anxiety_index": memory["anxiety_index"],
+            "coke_status": memory["coke_status"],
+            "session_count": memory["session_count"],
+            "edge_index": memory.get("edge_index")
         }
-        data = {
-            "text": text_to_speak,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {
-                "stability": 0.35,
-                "similarity_boost": 0.85
-            }
-        }
 
-        tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-        response = requests.post(tts_url, headers=headers, json=data)
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
 
-        if response.status_code == 200:
-            with open(OUTPUT_FILE, "wb") as f:
-                f.write(response.content)
+        send_to_supabase(log_entry)
 
-            save_memory(memory)
-
-            log_entry = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "user_input": user_input,
-                "ai_summary": "Auto summary TBD",
-                "trust_level": memory["trust_level"],
-                "anxiety_index": memory["anxiety_index"],
-                "coke_status": memory["coke_status"],
-                "session_count": memory["session_count"],
-                "edge_index": memory.get("edge_index")
-            }
-
-            with open(LOG_FILE, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
-
-            send_to_supabase(log_entry)
-
-            return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
-        else:
-            return jsonify({"error": response.text}), 500
+        return jsonify({"transcript": text_to_speak}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -119,45 +103,30 @@ def live_kb():
 
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
+    memory = load_memory()
     schema = load_schema()
     snapshot_lines = ["# Memory Snapshot"]
-    memory = load_memory()
     for field in schema:
         name = field["name"]
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
     return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
-    memory = load_memory()
-    try:
-        composite_profile = load_long_term_profile()
-    except Exception:
-        composite_profile = "No long-term profile available."
-
-    snapshot_text = f"""# Memory Snapshot
-trust_level: {memory.get('trust_level', 'N/A')}
-session_count: {memory.get('session_count', 'N/A')}
-anxiety_index: {memory.get('anxiety_index', 'N/A')}
-coke_status: {memory.get('coke_status', 'N/A')}
-edge_index: {memory.get('edge_index', 'N/A')}
-
-# Composite Profile
-{composite_profile}
-"""
-    return snapshot_text, 200, {"Content-Type": "text/plain"}
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
+    print("DEBUG /log_memory called, headers:", request.headers)
+    print("DEBUG body:", request.get_data())
     try:
         data = request.get_json()
+        schema = load_schema()
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_input": data.get("user_input", ""),
-            "trust_level": data.get("trust_level"),
-            "anxiety_index": data.get("anxiety_index"),
-            "coke_status": data.get("coke_status"),
-            "session_count": data.get("session_count"),
-            "edge_index": data.get("edge_index"),
-            "ai_summary": data.get("ai_summary", "N/A")
+            "timestamp": datetime.utcnow().isoformat()
         }
+        for field in schema:
+            name = field["name"]
+            log_entry[name] = data.get(name, field["default"])
+        log_entry["user_input"] = data.get("user_input", "")
+        log_entry["ai_summary"] = data.get("ai_summary", "N/A")
+        log_entry["session_count"] = data.get("session_count", 999)
         send_to_supabase(log_entry)
         return jsonify({"status": "success"}), 200
     except Exception as e:

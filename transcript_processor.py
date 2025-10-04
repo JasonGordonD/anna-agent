@@ -1,11 +1,9 @@
-# transcript_processor.py — Fully Dynamic Schema-Driven Memory Scorer
-
 import requests
 import json
 from datetime import datetime
 from schema_loader import load_schema
 
-# === HARD-CODED TEST KEYS ===
+# === Real API Keys and URLs (Confirmed) ===
 ELEVENLABS_API_KEY = "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed"
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co/rest/v1/session_logs"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
@@ -26,8 +24,6 @@ SUPABASE_HEADERS = {
 
 schema = load_schema()
 
-# === CORE FUNCTIONS ===
-
 def fetch_latest_transcript():
     print("🔍 Fetching transcript IDs...")
     res = requests.get(TRANSCRIPT_LIST_API, headers=HEADERS)
@@ -44,43 +40,46 @@ def fetch_latest_transcript():
 
 def analyze_transcript(text):
     lowered = text.lower()
-    result = {
-        "user_input": text,
-        "ai_summary": "Auto-processed from ElevenLabs transcript"
-    }
+    memory_blob = {}
 
     for field in schema:
         name = field["name"]
         default = field["default"]
-        result[name] = default
+        memory_blob[name] = default
 
         if name == "trust_level" and "good boy" in lowered:
-            result[name] += 0.5
+            memory_blob[name] += 0.5
         if name == "anxiety_index" and "pause" in lowered:
-            result[name] += 0.3
+            memory_blob[name] += 0.3
         if name == "coke_status" and ("coke" in lowered or "take a breath" in lowered):
-            result[name] = 2
+            memory_blob[name] = 2
         if name == "edge_index" and "edge" in lowered:
-            result[name] = 0.95
+            memory_blob[name] = 0.95
         if name == "humiliation_score" and "worthless" in lowered:
-            result[name] = 1.0
+            memory_blob[name] = 1.0
         if name == "mirror_bonding" and "mine" in lowered:
-            result[name] = 0.8
+            memory_blob[name] = 0.8
 
-    return result
+    return memory_blob
 
-def post_to_supabase(memory):
-    memory["timestamp"] = datetime.utcnow().isoformat()
-    memory["session_count"] = 999
-    print("📤 Sending to Supabase...", memory)
-    res = requests.post(SUPABASE_URL, headers=SUPABASE_HEADERS, json=memory)
-    print("✅ Supabase status:", res.status_code)
+def post_to_supabase(memory_blob, transcript_text):
+    payload = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "session_count": 999,
+        "user_input": transcript_text,
+        "ai_summary": "Scored via transcript_processor.py",
+        "memory_blob": memory_blob
+    }
+    print("📤 Posting to Supabase:", json.dumps(payload, indent=2))
+    res = requests.post(SUPABASE_URL, headers=SUPABASE_HEADERS, json=payload)
+    print("✅ Supabase response code:", res.status_code)
+    if res.status_code != 201:
+        print("❌ Supabase error:", res.text)
 
-# === RUN ===
 if __name__ == "__main__":
     try:
         transcript, meta = fetch_latest_transcript()
-        scored = analyze_transcript(transcript)
-        post_to_supabase(scored)
+        memory_blob = analyze_transcript(transcript)
+        post_to_supabase(memory_blob, transcript)
     except Exception as e:
         print("❌ ERROR:", str(e))
