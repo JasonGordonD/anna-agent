@@ -25,6 +25,7 @@ trust_level: {memory['trust_level']}
 session_count: {memory['session_count']}
 anxiety_index: {memory['anxiety_index']}
 coke_status: {memory['coke_status']}
+edge_index: {memory['edge_index']}
 
 Resume interaction with Billy as if it's a continuous, emotionally layered scene.
 """
