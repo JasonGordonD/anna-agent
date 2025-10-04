@@ -2,9 +2,9 @@ from flask import Flask, request, send_file, jsonify
 from memory import load_memory, save_memory
 from prompt_builder import build_prompt
 import requests
-from pathlib import Path
 from datetime import datetime
 import json
+from pathlib import Path
 
 app = Flask(__name__)
 
@@ -14,18 +14,18 @@ VOICE_ID = "qLnOIbrUXZ6axFL6mHX7"
 OUTPUT_FILE = Path("anna_output.mp3")
 LOG_FILE = Path("session_log.json")
 
-# ✅ Supabase config
+# Supabase config
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
+SUPABASE_KEY = "your_supabase_key_here"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
 def generate_memory_snapshot(memory):
     return f"""# Memory Snapshot
-trust_level: {memory['trust_level']}
-session_count: {memory['session_count']}
-anxiety_index: {memory['anxiety_index']}
-coke_status: {memory['coke_status']}
-edge_index: {memory['edge_index']}
+trust_level: {memory.get('trust_level', 'N/A')}
+session_count: {memory.get('session_count', 'N/A')}
+anxiety_index: {memory.get('anxiety_index', 'N/A')}
+coke_status: {memory.get('coke_status', 'N/A')}
+edge_index: {memory.get('edge_index', 'N/A')}
 
 Resume interaction with Billy as if it's a continuous, emotionally layered scene.
 """
@@ -115,8 +115,8 @@ def speak():
                 "trust_level": memory["trust_level"],
                 "anxiety_index": memory["anxiety_index"],
                 "coke_status": memory["coke_status"],
-		"edge_index": memory["edge_index"],
-                "session_count": memory["session_count"]
+                "session_count": memory["session_count"],
+                "edge_index": memory.get("edge_index", None)
             }
 
             with open(LOG_FILE, "a") as f:
@@ -136,7 +136,6 @@ def snapshot():
     memory = load_memory()
     return generate_memory_snapshot(memory), 200, {"Content-Type": "text/plain"}
 
-# ✅ NEW: Endpoint to receive POST from ElevenLabs store_memory tool
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
     try:
@@ -149,8 +148,8 @@ def log_memory():
             "anxiety_index": data.get("anxiety_index"),
             "coke_status": data.get("coke_status"),
             "session_count": data.get("session_count"),
-            "ai_summary": data.get("ai_summary", "N/A"),
-	    "edge_index": data.get("edge_index")
+            "edge_index": data.get("edge_index"),
+            "ai_summary": data.get("ai_summary", "N/A")
         }
 
         send_to_supabase(log_entry)
