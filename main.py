@@ -1,4 +1,3 @@
-# main.py
 from flask import Flask, request, send_file, jsonify
 from memory import load_memory, save_memory
 from prompt_builder import build_prompt
@@ -20,6 +19,7 @@ SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
+
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
     if any(word in lowered for word in ["good boy", "love you", "missed you"]):
@@ -38,6 +38,7 @@ def analyze_emotion_and_update(memory, user_input):
     memory["anxiety_index"] = round(min(max(memory["anxiety_index"], 0), 1), 2)
     return memory
 
+
 def send_to_supabase(log_entry):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -47,9 +48,11 @@ def send_to_supabase(log_entry):
     response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
     print("DEBUG: Sent to Supabase with code", response.status_code)
 
+
 @app.route("/")
 def health():
     return "Anna agent is running."
+
 
 @app.route("/speak", methods=["POST"])
 def speak():
@@ -111,23 +114,24 @@ def speak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
     memory = load_memory()
     MEMORY_SCHEMA = load_schema()
-    try:
-        composite_profile = load_long_term_profile()
-    except Exception:
-        composite_profile = "No long-term profile available."
     snapshot_lines = ["# Memory Snapshot"]
     for field in MEMORY_SCHEMA:
         name = field["name"]
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
-    snapshot_lines.append(f"\n# Composite Profile\n{composite_profile}")
     return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
 
+
+# 🧠 ADDING DEBUG LOGGING FOR WEBHOOK TESTING
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
+    print("DEBUG /log_memory called, headers:", request.headers)
+    print("DEBUG body:", request.get_data())
+
     try:
         data = request.get_json()
         log_entry = {
@@ -143,4 +147,5 @@ def log_memory():
         send_to_supabase(log_entry)
         return jsonify({"status": "success"}), 200
     except Exception as e:
+        print("ERROR in /log_memory:", str(e))
         return jsonify({"error": str(e)}), 500
