@@ -2,7 +2,7 @@ import requests
 import json
 from datetime import datetime
 
-# Supabase config — using your real provided values
+# Supabase config — using your provided keys
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
@@ -15,6 +15,7 @@ def fetch_logs_from_supabase(limit=50):
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
+
     params = {
         "order": "id.desc",
         "limit": limit
@@ -22,7 +23,6 @@ def fetch_logs_from_supabase(limit=50):
 
     response = requests.get(SUPABASE_LOG_ENDPOINT, headers=headers, params=params)
 
-    # Debug output
     print("DEBUG STATUS CODE:", response.status_code)
     print("DEBUG RESPONSE TEXT:", response.text)
 
@@ -67,7 +67,7 @@ def generate_long_term_profile():
     write_profile_file(summary)
     return summary
 
-# Run directly
+# Execute directly
 if __name__ == "__main__":
     final_summary = generate_long_term_profile()
     print(final_summary)
