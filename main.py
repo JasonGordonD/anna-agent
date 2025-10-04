@@ -9,13 +9,11 @@ from profile_builder import load_long_term_profile
 
 app = Flask(__name__)
 
-# ElevenLabs config
 API_KEY = "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed"
 VOICE_ID = "qLnOIbrUXZ6axFL6mHX7"
 OUTPUT_FILE = Path("anna_output.mp3")
 LOG_FILE = Path("session_log.json")
 
-# Supabase config
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
@@ -39,21 +37,13 @@ def analyze_emotion_and_update(memory, user_input):
     return memory
 
 def send_to_supabase(log_entry):
-    print("DEBUG: Sending to Supabase:", SUPABASE_LOG_ENDPOINT)
-    print("DEBUG: Payload:", json.dumps(log_entry, indent=2))
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
-    try:
-        response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
-        print("DEBUG: Supabase response code:", response.status_code)
-        print("DEBUG: Supabase response body:", response.text)
-        if response.status_code != 201:
-            print("⚠️ Supabase insert failed:", response.text)
-    except Exception as e:
-        print("❌ Supabase log error:", e)
+    response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
+    print("DEBUG: Sent to Supabase with code", response.status_code)
 
 @app.route("/")
 def health():
@@ -71,7 +61,9 @@ def speak():
         memory = analyze_emotion_and_update(memory, user_input)
 
         prompt = build_prompt(memory)
-        text_to_speak = f"{prompt}\n\n{user_input}"
+        text_to_speak = f"{prompt}
+
+{user_input}"
 
         headers = {
             "Accept": "audio/mpeg",
@@ -96,21 +88,15 @@ def speak():
 
             save_memory(memory)
 
-            ai_summary = "Neutral compliance."
-            if "good boy" in user_input.lower():
-                ai_summary = "Reward dynamic reinforced."
-            elif "hesitate" in user_input.lower():
-                ai_summary = "Emotional resistance detected."
-
             log_entry = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "user_input": user_input,
-                "ai_summary": ai_summary,
+                "ai_summary": "Auto summary TBD",
                 "trust_level": memory["trust_level"],
                 "anxiety_index": memory["anxiety_index"],
                 "coke_status": memory["coke_status"],
                 "session_count": memory["session_count"],
-                "edge_index": memory.get("edge_index", None)
+                "edge_index": memory.get("edge_index")
             }
 
             with open(LOG_FILE, "a") as f:
@@ -149,9 +135,6 @@ edge_index: {memory.get('edge_index', 'N/A')}
 def log_memory():
     try:
         data = request.get_json()
-        print("DEBUG: Incoming /log_memory call")
-        print("DEBUG: Received data:", data)
-
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "user_input": data.get("user_input", ""),
@@ -162,13 +145,7 @@ def log_memory():
             "edge_index": data.get("edge_index"),
             "ai_summary": data.get("ai_summary", "N/A")
         }
-
         send_to_supabase(log_entry)
-
-        with open(LOG_FILE, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
-
         return jsonify({"status": "success"}), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500

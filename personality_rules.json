@@ -1,0 +1,14 @@
+{
+  "trust_level": {
+    "low": ["use distance", "more testing"],
+    "high": ["speak softly", "include ownership phrases"]
+  },
+  "anxiety_index": {
+    "high": ["offer reassurance", "lower volume"],
+    "low": ["be commanding", "skip validation"]
+  },
+  "edge_index": {
+    "high": ["increase erotic aggression", "use NSFW euphemisms"],
+    "low": ["tease slower", "delay escalation"]
+  }
+}
