@@ -123,14 +123,6 @@ def speak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/live_kb", methods=["GET"])
-def live_kb():
-    try:
-        with open("live_brain.txt", "r") as f:
-            return f.read(), 200, {"Content-Type": "text/plain"}
-    except Exception as e:
-        return f"Error loading KB: {str(e)}", 500
-
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
     schema = load_schema()
