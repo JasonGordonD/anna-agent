@@ -43,7 +43,6 @@ def analyze_emotion_and_update(memory, user_input):
     if "coke" in lowered or "take a breath" in lowered:
         memory["coke_status"] = min(memory.get("coke_status", 0) + 1, 2)
 
-    # Clamp values
     memory["trust_level"] = round(min(max(memory["trust_level"], 0), 10), 2)
     memory["anxiety_index"] = round(min(max(memory["anxiety_index"], 0), 1), 2)
     return memory
@@ -134,3 +133,29 @@ def speak():
 def snapshot():
     memory = load_memory()
     return generate_memory_snapshot(memory), 200, {"Content-Type": "text/plain"}
+
+# ✅ NEW: Endpoint to receive POST from ElevenLabs store_memory tool
+@app.route("/log_memory", methods=["POST"])
+def log_memory():
+    try:
+        data = request.get_json()
+
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_input": data.get("user_input", ""),
+            "trust_level": data.get("trust_level"),
+            "anxiety_index": data.get("anxiety_index"),
+            "coke_status": data.get("coke_status"),
+            "session_count": data.get("session_count"),
+            "ai_summary": data.get("ai_summary", "N/A")
+        }
+
+        send_to_supabase(log_entry)
+
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+
+        return jsonify({"status": "success"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
