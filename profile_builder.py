@@ -1,56 +1,126 @@
 import requests
 import json
 from datetime import datetime
+from schema_loader import load_schema
+import os
 
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
+LIVE_KB_PATH = "live_brain.txt"
 
-PROFILE_PATH = "billy_profile.txt"
+schema = load_schema()
 
-def fetch_logs_from_supabase():
+ANNA_CORE_IDENTITY = """# Anna Ionescu — Core Identity
+- 38-year-old Romanian domme based in Bucharest
+- Accent: light Romanian (rolled /r/, softened /s/)
+- Voice: low register, emotionally modulated, never meta
+- Method: empathetic sadism + dark psychology
+- Avoids explicit instructions unless trust is high
+- Speaks with control, silence as power
+"""
+
+def fetch_logs():
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
     response = requests.get(SUPABASE_LOG_ENDPOINT + "?select=*", headers=headers)
-    print("DEBUG STATUS CODE:", response.status_code)
-    print("DEBUG RESPONSE TEXT:", response.text)
-    if response.status_code == 200:
-        return response.json()
-    return []
+    return response.json() if response.status_code == 200 else []
 
-def build_composite_summary(logs):
+def get_tags(text):
+    lowered = text.lower()
+    tags = []
+    if any(x in lowered for x in ["worthless", "pathetic", "good boy"]): tags.append("humiliation")
+    if any(x in lowered for x in ["missed you", "need you"]): tags.append("longing")
+    if any(x in lowered for x in ["take a breath", "coke"]): tags.append("coke_ref")
+    if "pause" in lowered: tags.append("hesitation")
+    return tags
+
+def trend_summary(logs):
+    if len(logs) < 2: return "No trends available."
+    trend = []
+    edge_values = [l.get("edge_index") for l in logs if l.get("edge_index") is not None]
+    anxiety_values = [l.get("anxiety_index") for l in logs if l.get("anxiety_index") is not None]
+    trust_values = [l.get("trust_level") for l in logs if l.get("trust_level") is not None]
+
+    def trend_text(name, vals):
+        if len(vals) < 2: return ""
+        delta = vals[-1] - vals[-2]
+        if delta > 0.05: return f"↑ {name} increasing"
+        elif delta < -0.05: return f"↓ {name} dropping"
+        else: return f"→ {name} stable"
+
+    for name, vals in [("Edge", edge_values), ("Anxiety", anxiety_values), ("Trust", trust_values)]:
+        t = trend_text(name, vals)
+        if t: trend.append(t)
+
+    return "\n".join(trend) if trend else "No significant trend shifts."
+
+def behavior_modulation(snapshot):
+    out = []
+    if snapshot.get("trust_level", 0) > 8:
+        out.append("↑ Trust > 8 → Use possessive praise and confident tone")
+    if snapshot.get("anxiety_index", 0) > 0.6:
+        out.append("↑ Anxiety > 0.6 → Soften tone, elongate pauses")
+    if snapshot.get("mirror_bonding", 0) > 0.7:
+        out.append("↑ Mirror bonding > 0.7 → Reflect user phrases, expose care")
+    return "\n".join(out) or "No modulation triggers."
+
+def narrative_memory(log):
+    trust = log.get("trust_level")
+    anxiety = log.get("anxiety_index")
+    edge = log.get("edge_index")
+    lines = []
+    if trust and trust > 8:
+        lines.append("He trusts me now. I barely have to say it — he offers before I ask.")
+    if anxiety and anxiety > 0.5:
+        lines.append("His silence trembles. I recognize that pause. That craving to be safe — and ruined.")
+    if edge and edge > 0.9:
+        lines.append("He’s near the edge again. I won’t stop him — yet.")
+    return "\n".join(lines) or "Anna reflects silently."
+
+def build_live_brain(logs):
     if not logs:
-        return "No session data available to summarize."
+        return "# No memory available"
 
-    summary = "## Long-Term Composite Profile\n\n"
-    for i, log in enumerate(reversed(logs)):
-        summary += f"### Session {i+1}:\n"
-        summary += f"- Input: {log.get('user_input', '')}\n"
-        summary += f"- Summary: {log.get('ai_summary', '')}\n"
-        summary += f"- Trust: {log.get('trust_level', 'N/A')}, Anxiety: {log.get('anxiety_index', 'N/A')}, Edge: {log.get('edge_index', 'N/A')}\n\n"
-    summary += "### Pattern Observations:\n- Identify emotional cycles, reinforcement triggers, submission patterns, and dominant shifts here.\n"
-    return summary
+    latest = logs[-1]
+    summary = ["# Anna Live KB — Real-Time Memory Layer", ANNA_CORE_IDENTITY, ""]
 
-def write_profile_file(summary_text):
-    with open(PROFILE_PATH, "w") as f:
-        f.write(summary_text)
+    summary.append("## Latest Memory Snapshot")
+    for field in schema:
+        name = field["name"]
+        summary.append(f"{name}: {latest.get(name, 'N/A')}")
 
-def load_long_term_profile():
-    try:
-        with open(PROFILE_PATH, "r") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "No long-term profile available yet."
+    summary.append("\n## Observed Behavior Tags")
+    summary.append(f"- Input: {latest.get('user_input', '')}")
+    summary.append(f"- Summary: {latest.get('ai_summary', '')}")
+    summary.append(f"- Tags: {get_tags(latest.get('user_input', ''))}")
 
-def generate_long_term_profile():
-    logs = fetch_logs_from_supabase()
-    summary = build_composite_summary(logs)
-    write_profile_file(summary)
-    return summary
+    summary.append("\n## Trends")
+    summary.append(trend_summary(logs))
+
+    summary.append("\n## Conditional Behavior Modulation")
+    summary.append(behavior_modulation(latest))
+
+    summary.append("\n## Narrative Memory Replay")
+    summary.append(narrative_memory(latest))
+
+    return "\n".join(summary)
+
+def write_live_kb(content):
+    with open(LIVE_KB_PATH, "w") as f:
+        f.write(content)
+    backup_name = f"brain_{datetime.utcnow().date()}.txt"
+    with open(backup_name, "w") as f:
+        f.write(content)
+
+def generate():
+    logs = fetch_logs()
+    kb = build_live_brain(logs)
+    write_live_kb(kb)
+    return kb
 
 if __name__ == "__main__":
-    final_summary = generate_long_term_profile()
-    print(final_summary)
+    print(generate())
