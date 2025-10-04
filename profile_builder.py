@@ -9,21 +9,16 @@ SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
 PROFILE_PATH = "billy_profile.txt"
 
-def fetch_logs_from_supabase(limit=50):
+def fetch_logs_from_supabase():
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
 
-    params = {
-        "order": "id.desc",
-        "limit": limit
-    }
+    # Unfiltered query – full table dump
+    response = requests.get(SUPABASE_LOG_ENDPOINT + "?select=*", headers=headers)
 
-    response = requests.get(SUPABASE_LOG_ENDPOINT, headers=headers, params=params)
-
-    # Debug output
     print("DEBUG STATUS CODE:", response.status_code)
     print("DEBUG RESPONSE TEXT:", response.text)
 
@@ -68,7 +63,7 @@ def generate_long_term_profile():
     write_profile_file(summary)
     return summary
 
-# Run directly to test
+# Run this script directly to generate profile
 if __name__ == "__main__":
     final_summary = generate_long_term_profile()
     print(final_summary)
