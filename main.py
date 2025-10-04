@@ -115,6 +115,7 @@ def speak():
                 "trust_level": memory["trust_level"],
                 "anxiety_index": memory["anxiety_index"],
                 "coke_status": memory["coke_status"],
+		"edge_index": memory["edge_index"],
                 "session_count": memory["session_count"]
             }
 
@@ -148,7 +149,8 @@ def log_memory():
             "anxiety_index": data.get("anxiety_index"),
             "coke_status": data.get("coke_status"),
             "session_count": data.get("session_count"),
-            "ai_summary": data.get("ai_summary", "N/A")
+            "ai_summary": data.get("ai_summary", "N/A"),
+	    "edge_index": data.get("edge_index")
         }
 
         send_to_supabase(log_entry)
