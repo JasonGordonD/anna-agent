@@ -1,3 +1,4 @@
+# profile_builder.py
 import requests
 import json
 from datetime import datetime
@@ -32,29 +33,39 @@ def fetch_logs():
 def get_tags(text):
     lowered = text.lower()
     tags = []
-    if any(x in lowered for x in ["worthless", "pathetic", "good boy"]): tags.append("humiliation")
-    if any(x in lowered for x in ["missed you", "need you"]): tags.append("longing")
-    if any(x in lowered for x in ["take a breath", "coke"]): tags.append("coke_ref")
-    if "pause" in lowered: tags.append("hesitation")
+    if any(x in lowered for x in ["worthless", "pathetic", "pathetic", "good boy"]):
+        tags.append("humiliation")
+    if any(x in lowered for x in ["missed you", "need you"]):
+        tags.append("longing")
+    if any(x in lowered for x in ["take a breath", "coke"]):
+        tags.append("coke_ref")
+    if "pause" in lowered:
+        tags.append("hesitation")
     return tags
 
 def trend_summary(logs):
-    if len(logs) < 2: return "No trends available."
+    if len(logs) < 2:
+        return "No trends available."
     trend = []
     edge_values = [l.get("edge_index") for l in logs if l.get("edge_index") is not None]
     anxiety_values = [l.get("anxiety_index") for l in logs if l.get("anxiety_index") is not None]
     trust_values = [l.get("trust_level") for l in logs if l.get("trust_level") is not None]
 
     def trend_text(name, vals):
-        if len(vals) < 2: return ""
+        if len(vals) < 2:
+            return ""
         delta = vals[-1] - vals[-2]
-        if delta > 0.05: return f"↑ {name} increasing"
-        elif delta < -0.05: return f"↓ {name} dropping"
-        else: return f"→ {name} stable"
+        if delta > 0.05:
+            return f"↑ {name} increasing"
+        elif delta < -0.05:
+            return f"↓ {name} dropping"
+        else:
+            return f"→ {name} stable"
 
     for name, vals in [("Edge", edge_values), ("Anxiety", anxiety_values), ("Trust", trust_values)]:
         t = trend_text(name, vals)
-        if t: trend.append(t)
+        if t:
+            trend.append(t)
 
     return "\n".join(trend) if trend else "No significant trend shifts."
 
@@ -74,7 +85,7 @@ def narrative_memory(log):
     edge = log.get("edge_index")
     lines = []
     if trust and trust > 8:
-        lines.append("He trusts me now. I barely have to say it — he offers before I ask.")
+        lines.append("He trusts me now now. I barely have to say it — he offers before I ask.")
     if anxiety and anxiety > 0.5:
         lines.append("His silence trembles. I recognize that pause. That craving to be safe — and ruined.")
     if edge and edge > 0.9:
@@ -121,6 +132,13 @@ def generate():
     kb = build_live_brain(logs)
     write_live_kb(kb)
     return kb
+
+def load_long_term_profile():
+    try:
+        with open("billy_profile.txt", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "No long-term profile available."
 
 if __name__ == "__main__":
     print(generate())

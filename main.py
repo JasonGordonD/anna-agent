@@ -1,11 +1,13 @@
-import json
+# main.py
 from flask import Flask, request, send_file, jsonify
 from memory import load_memory, save_memory
 from prompt_builder import build_prompt
+import requests
 from datetime import datetime
+import json
 from pathlib import Path
 from profile_builder import load_long_term_profile
-import requests
+from schema_loader import load_schema
 
 app = Flask(__name__)
 
@@ -13,12 +15,28 @@ API_KEY = "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed"
 VOICE_ID = "qLnOIbrUXZ6axFL6mHX7"
 OUTPUT_FILE = Path("anna_output.mp3")
 LOG_FILE = Path("session_log.json")
+
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
-with open("memory_schema.json") as f:
-    MEMORY_SCHEMA = json.load(f)
+def analyze_emotion_and_update(memory, user_input):
+    lowered = user_input.lower()
+    if any(word in lowered for word in ["good boy", "love you", "missed you"]):
+        memory["trust_level"] += 0.2
+    if any(word in lowered for word in ["i'm scared", "i'm anxious", "i don't know"]):
+        memory["anxiety_index"] += 0.1
+    if any(word in lowered for word in ["hesitate", "pause", "not sure"]):
+        memory["anxiety_index"] += 0.05
+        memory["trust_level"] -= 0.05
+    if any(word in lowered for word in ["i want to stop", "this is too much", "break"]):
+        memory["anxiety_index"] += 0.2
+    if "coke" in lowered or "take a breath" in lowered:
+        memory["coke_status"] = min(memory.get("coke_status", 0) + 1, 2)
+
+    memory["trust_level"] = round(min(max(memory["trust_level"], 0), 10), 2)
+    memory["anxiety_index"] = round(min(max(memory["anxiety_index"], 0), 1), 2)
+    return memory
 
 def send_to_supabase(log_entry):
     headers = {
@@ -27,52 +45,11 @@ def send_to_supabase(log_entry):
         "Content-Type": "application/json"
     }
     response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
-    print("DEBUG: Supabase response code:", response.status_code)
+    print("DEBUG: Sent to Supabase with code", response.status_code)
 
-@app.route("/log_memory", methods=["POST"])
-def log_memory():
-    try:
-        data = request.get_json()
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_input": data.get("user_input", ""),
-            "ai_summary": data.get("ai_summary", "N/A")
-        }
-        for field in MEMORY_SCHEMA:
-            name = field["name"]
-            default = field["default"]
-            log_entry[name] = data.get(name, default)
-        send_to_supabase(log_entry)
-        return jsonify({"status": "success"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/snapshot", methods=["GET"])
-def snapshot():
-    memory = load_memory()
-    try:
-        composite_profile = load_long_term_profile()
-    except Exception:
-        composite_profile = "No long-term profile available."
-
-    snapshot_lines = ["# Memory Snapshot"]
-    for field in MEMORY_SCHEMA:
-        name = field["name"]
-        snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
-    snapshot_lines.append("
-# Composite Profile
-" + composite_profile)
-
-    return "
-".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
-
-@app.route("/live_kb", methods=["GET"])
-def live_kb():
-    try:
-        with open("live_brain.txt", "r") as f:
-            return f.read(), 200, {"Content-Type": "text/plain"}
-    except FileNotFoundError:
-        return "No live KB available.", 200, {"Content-Type": "text/plain"}
+@app.route("/")
+def health():
+    return "Anna agent is running."
 
 @app.route("/speak", methods=["POST"])
 def speak():
@@ -83,6 +60,8 @@ def speak():
 
         memory = load_memory()
         memory["session_count"] += 1
+        memory = analyze_emotion_and_update(memory, user_input)
+
         prompt = build_prompt(memory)
         text_to_speak = f"{prompt}\n\n{user_input}"
 
@@ -109,21 +88,15 @@ def speak():
 
             save_memory(memory)
 
-            ai_summary = "Neutral compliance."
-            if "good boy" in user_input.lower():
-                ai_summary = "Reward dynamic reinforced."
-            elif "hesitate" in user_input.lower():
-                ai_summary = "Emotional resistance detected."
-
             log_entry = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "user_input": user_input,
-                "ai_summary": ai_summary,
+                "ai_summary": "Auto summary TBD",
                 "trust_level": memory["trust_level"],
                 "anxiety_index": memory["anxiety_index"],
                 "coke_status": memory["coke_status"],
-                "edge_index": memory["edge_index"],
-                "session_count": memory["session_count"]
+                "session_count": memory["session_count"],
+                "edge_index": memory.get("edge_index")
             }
 
             with open(LOG_FILE, "a") as f:
@@ -138,6 +111,36 @@ def speak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/")
-def health():
-    return "Anna agent is running."
+@app.route("/snapshot", methods=["GET"])
+def snapshot():
+    memory = load_memory()
+    MEMORY_SCHEMA = load_schema()
+    try:
+        composite_profile = load_long_term_profile()
+    except Exception:
+        composite_profile = "No long-term profile available."
+    snapshot_lines = ["# Memory Snapshot"]
+    for field in MEMORY_SCHEMA:
+        name = field["name"]
+        snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
+    snapshot_lines.append(f"\n# Composite Profile\n{composite_profile}")
+    return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
+
+@app.route("/log_memory", methods=["POST"])
+def log_memory():
+    try:
+        data = request.get_json()
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_input": data.get("user_input", ""),
+            "trust_level": data.get("trust_level"),
+            "anxiety_index": data.get("anxiety_index"),
+            "coke_status": data.get("coke_status"),
+            "session_count": data.get("session_count"),
+            "edge_index": data.get("edge_index"),
+            "ai_summary": data.get("ai_summary", "N/A")
+        }
+        send_to_supabase(log_entry)
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
