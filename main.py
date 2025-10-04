@@ -49,6 +49,20 @@ def send_to_supabase(log_entry):
 def health():
     return "Anna agent is running."
 
+@app.route("/live_kb", methods=["GET"])
+def live_kb():
+    try:
+        kb_path = Path(__file__).parent / "live_brain.txt"
+        if not kb_path.exists():
+            return "Error: live_brain.txt not found. Please run profile_builder.py to generate it.", 404
+        with open(kb_path, "r") as f:
+            content = f.read()
+        return content, 200, {"Content-Type": "text/plain"}
+    except Exception as e:
+        import traceback
+        print("ERROR in /live_kb:", traceback.format_exc())
+        return f"Error loading KB: {str(e)}", 500
+
 @app.route("/speak", methods=["POST"])
 def speak():
     try:
