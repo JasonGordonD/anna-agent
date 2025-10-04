@@ -5,6 +5,7 @@ import requests
 from datetime import datetime
 import json
 from pathlib import Path
+from profile_builder import load_long_term_profile
 
 app = Flask(__name__)
 
@@ -16,19 +17,8 @@ LOG_FILE = Path("session_log.json")
 
 # Supabase config
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
-SUPABASE_KEY = "your_supabase_key_here"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
-
-def generate_memory_snapshot(memory):
-    return f"""# Memory Snapshot
-trust_level: {memory.get('trust_level', 'N/A')}
-session_count: {memory.get('session_count', 'N/A')}
-anxiety_index: {memory.get('anxiety_index', 'N/A')}
-coke_status: {memory.get('coke_status', 'N/A')}
-edge_index: {memory.get('edge_index', 'N/A')}
-
-Resume interaction with Billy as if it's a continuous, emotionally layered scene.
-"""
 
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
@@ -49,6 +39,8 @@ def analyze_emotion_and_update(memory, user_input):
     return memory
 
 def send_to_supabase(log_entry):
+    print("DEBUG: Sending to Supabase:", SUPABASE_LOG_ENDPOINT)
+    print("DEBUG: Payload:", json.dumps(log_entry, indent=2))
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -56,6 +48,8 @@ def send_to_supabase(log_entry):
     }
     try:
         response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
+        print("DEBUG: Supabase response code:", response.status_code)
+        print("DEBUG: Supabase response body:", response.text)
         if response.status_code != 201:
             print("⚠️ Supabase insert failed:", response.text)
     except Exception as e:
@@ -134,12 +128,29 @@ def speak():
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
     memory = load_memory()
-    return generate_memory_snapshot(memory), 200, {"Content-Type": "text/plain"}
+    try:
+        composite_profile = load_long_term_profile()
+    except Exception:
+        composite_profile = "No long-term profile available."
+
+    snapshot_text = f"""# Memory Snapshot
+trust_level: {memory.get('trust_level', 'N/A')}
+session_count: {memory.get('session_count', 'N/A')}
+anxiety_index: {memory.get('anxiety_index', 'N/A')}
+coke_status: {memory.get('coke_status', 'N/A')}
+edge_index: {memory.get('edge_index', 'N/A')}
+
+# Composite Profile
+{composite_profile}
+"""
+    return snapshot_text, 200, {"Content-Type": "text/plain"}
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
     try:
         data = request.get_json()
+        print("DEBUG: Incoming /log_memory call")
+        print("DEBUG: Received data:", data)
 
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
