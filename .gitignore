@@ -9,6 +9,10 @@ __pycache__/
 *.json
 *.log
 
+# Whitelist required JSON config files for deployment
+!rules.json
+!personality_rules.json
+
 # Node modules and related
 node_modules/
 package-lock.json
