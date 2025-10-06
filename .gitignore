@@ -18,3 +18,10 @@ package.json
 *.save
 latest_transcript.json
 mock_transcript.txt
+__pycache__/
+*.pyc
+*.bak
+*.mp3
+*.png
+*.txt
+*.log
