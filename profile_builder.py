@@ -13,7 +13,6 @@ SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', (
     "EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 ))
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
-LIVE_KB_PATH = "live_brain.txt"
 
 schema = load_schema()
 
@@ -27,13 +26,14 @@ ANNA_CORE_IDENTITY = """# Anna Ionescu — Core Identity
 """
 
 # === HELPERS ===
-def fetch_logs():
+def fetch_logs(user_id='billy'):
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
-    response = requests.get(SUPABASE_LOG_ENDPOINT + "?select=*", headers=headers)
+    params = {"select": "*", "user_id": f"eq.{user_id}", "order": "timestamp.desc"}
+    response = requests.get(SUPABASE_LOG_ENDPOINT, headers=headers, params=params)
     if response.status_code == 200:
         return response.json()
     print("⚠️ Supabase fetch failed:", response.status_code, response.text)
@@ -120,11 +120,11 @@ def narrative_memory(log):
         lines.append("He’s near the edge again. I won’t stop him — yet.")
     return "\n".join(lines) or "Anna reflects silently."
 
-def build_live_brain(logs):
+def build_live_brain(logs, user_id='billy'):
     if not logs:
-        return "# No memory available\n" + ANNA_CORE_IDENTITY
+        return f"# No memory available for {user_id}\n" + ANNA_CORE_IDENTITY
     latest = logs[-1]
-    summary = ["# Anna Live KB — Real-Time Memory Layer", ANNA_CORE_IDENTITY, ""]
+    summary = [f"# Anna Live KB for {user_id} — Real-Time Memory Layer", ANNA_CORE_IDENTITY, ""]
     summary.append("## Latest Memory Snapshot")
     for field in schema:
         name = field["name"]
@@ -145,20 +145,21 @@ def build_live_brain(logs):
     summary.append(narrative_memory(latest))
     return "\n".join(summary)
 
-def write_live_kb(content):
+def write_live_kb(content, user_id='billy'):
     # Local write only (Vercel skips—read-only)
+    filename = f"live_brain_{user_id}.txt"
     if os.getenv('VERCEL_ENV') != 'production':  # Skip on Vercel
-        with open(LIVE_KB_PATH, "w") as f:
+        with open(filename, "w") as f:
             f.write(content)
-        backup_name = f"brain_{datetime.utcnow().date()}.txt"
+        backup_name = f"brain_{user_id}_{datetime.utcnow().date()}.txt"
         with open(backup_name, "w") as f:
             f.write(content)
 
-def generate():
-    logs = fetch_logs()
-    print(f"DEBUG: Fetched {len(logs)} logs from Supabase")
-    kb = build_live_brain(logs)
-    write_live_kb(kb)  # Local write if not Vercel
+def generate(user_id='billy'):
+    logs = fetch_logs(user_id)
+    print(f"DEBUG: Fetched {len(logs)} logs from Supabase for {user_id}")
+    kb = build_live_brain(logs, user_id)
+    write_live_kb(kb, user_id)  # Local write if not Vercel
     return kb  # Always return str for /live_kb
 
 if __name__ == "__main__":
