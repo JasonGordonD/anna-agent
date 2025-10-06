@@ -19,7 +19,7 @@ API_KEY = os.getenv('ELEVENLABS_API_KEY', "545d74e3e46e500a2cf07fdef11338abf4ccf
 VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")
 OUTPUT_FILE = Path("/tmp/anna_output.mp3")
 LOG_FILE = Path("/tmp/session_log.json")
-WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', "")
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97ce13be19")
 SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
@@ -117,11 +117,11 @@ def speak():
             log_entry = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "user_input": user_input,
-                "trust_level": memory["trust_level"],
-                "anxiety_index": memory["anxiety_index"],
-                "coke_status": memory["coke_status"],
-                "session_count": memory["session_count"],
-                "edge_index": memory["edge_index"],
+                "trust_level": memory.get("trust_level"),
+                "anxiety_index": memory.get("anxiety_index"),
+                "coke_status": memory.get("coke_status"),
+                "session_count": memory.get("session_count"),
+                "edge_index": memory.get("edge_index"),
                 "ai_summary": "Generated via /speak endpoint",
             }
             send_to_supabase(log_entry)
