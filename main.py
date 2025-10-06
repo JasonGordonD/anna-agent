@@ -4,18 +4,20 @@ from prompt_builder import build_prompt
 import requests
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 from profile_builder import generate
 
 app = Flask(__name__)
 
-API_KEY = "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed"
-VOICE_ID = "qLnOIbrUXZ6axFL6mHX7"
+# Use env vars (fallback to canonized for local; Vercel injects)
+API_KEY = os.getenv('ELEVENLABS_API_KEY', "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed")
+VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")  # Canonized for TTS
 OUTPUT_FILE = Path("anna_output.mp3")
-LOG_FILE = Path("session_log.json")
+LOG_FILE = Path("session_log.json")  # Optional local append
 
-SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
+SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
+SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
 # Startup: Generate live KB on module import (runs on gunicorn boot)
@@ -136,6 +138,7 @@ def snapshot():
     for field in schema:
         name = field["name"]
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
+    snapshot_lines.append(f"Full Memory Blob: {json.dumps(memory, indent=2)}")
     return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
 
 @app.route("/log_memory", methods=["POST"])
