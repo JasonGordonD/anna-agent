@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from profile_builder import generate  # Now returns str
+import subprocess  # For processor hook
 
 app = Flask(__name__)
 
@@ -155,3 +156,50 @@ def log_memory():
         return jsonify({"status": "success"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# New webhook route for ElevenLabs post-call transcript push (zero-manual automation)
+@app.route('/webhook_transcript', methods=['POST'])
+def webhook_transcript():
+    try:
+        data = request.json
+        transcript = data.get('transcript', '')  # Full user + agent text
+        metadata = data.get('metadata', {})  # e.g., edge_index, trust_level if enabled
+        conv_id = data.get('conversation_id', 'unknown')
+
+        # Save as JSON for processor
+        OUTPUT_DIR = Path("transcripts")
+        OUTPUT_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().isoformat()
+        json_fn = OUTPUT_DIR / f"webhook_{conv_id}_{timestamp}.json"
+        full_data = {"id": conv_id, "transcript": transcript, "metadata": metadata, "received_at": timestamp}
+        with open(json_fn, "w", encoding="utf-8") as f:
+            json.dump(full_data, f, indent=2)
+
+        # Auto-hook processor (inserts to Supabase, updates KB)
+        result = subprocess.run(["python", "transcript_processor.py", str(json_fn)], check=True, capture_output=True, cwd=os.path.dirname(__file__))
+        print(f"🔄 Processed: {result.stdout.decode()}")
+
+        # Fallback direct insert if processor skips (match schema)
+        log_entry = {
+            "timestamp": timestamp,
+            "user_input": transcript[:500] if transcript else "N/A",  # Truncate for schema
+            "ai_summary": metadata.get('ai_summary', 'Web hook summary TBD'),
+            "trust_level": metadata.get('trust_level', 0),
+            "anxiety_index": metadata.get('anxiety_index', 0),
+            "coke_status": metadata.get('coke_status', 0),
+            "session_count": metadata.get('session_count', 0),
+            "edge_index": metadata.get('edge_index', 0),
+            "memory_blob": json.dumps(full_data)  # Blob for full
+        }
+        send_to_supabase(log_entry)
+
+        return jsonify({"status": "received", "file": str(json_fn)}), 200
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Processor error: {e.stderr.decode()}")
+        return jsonify({"status": "error", "detail": e.stderr.decode()}), 500
+    except Exception as e:
+        print(f"⚠️ Webhook error: {str(e)}")
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
