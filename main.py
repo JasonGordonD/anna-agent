@@ -15,13 +15,13 @@ import time
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-API_KEY = os.getenv('ELEVENLABS_API_KEY', "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed")
-VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")
+API_KEY = "sk_395144d7d8604f470abb8d983081770c371c3011e03962e7"
+VOICE_ID = "zHX13TdWb6f856P3Hqta"
 OUTPUT_FILE = Path("/tmp/anna_output.mp3")
 LOG_FILE = Path("/tmp/session_log.json")
-WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97ce13be19")
-SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
-SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9zZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
+WEBHOOK_SECRET = "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97ce13be19"
+SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
 # === USER ID EXTRACTION ===
@@ -30,8 +30,12 @@ def get_user_id():
     user_id = request.headers.get('X-User-ID')
     if not user_id:
         user_id = request.args.get('user_id')
-    if not user_id:
-        user_id = request.json.get('user_id') if request.json else None
+    # Fixed: Guard JSON parse—only on POST, with try/except to avoid 415/500 on GET
+    if not user_id and request.method == 'POST':
+        try:
+            user_id = request.json.get('user_id') if request.json else None
+        except:
+            pass  # Skip parse on non-JSON or unsupported type
     return user_id or 'billy'
 
 # === BUILD DYNAMIC ELEVENLABS VARIABLES ===
@@ -85,144 +89,58 @@ def send_to_supabase(log_entry):
         SUPABASE_LOG_ENDPOINT + "?on_conflict=conversation_id",
         headers=headers,
         json=log_entry,
-        timeout=5,
     )
-    print("DEBUG: Supabase upsert code:", response.status_code)
-    return response
+    if response.status_code != 201:
+        print(f"[supabase] Log failed {response.status_code}: {response.text}")
 
-@app.route("/")
-def health():
-    return "Anna agent is running."
+@app.route("/", methods=["GET", "HEAD"])
+def health_check():
+    return "Anna agent is running.", 200, {"Content-Type": "text/plain"}
 
 @app.route("/live_kb", methods=["GET"])
 def live_kb():
     try:
         user_id = get_user_id()
-        kb_content = generate(user_id=user_id)
-        if not kb_content:
-            return "Error: KB generation failed.", 500
-        return kb_content, 200, {"Content-Type": "text/plain"}
+        kb_text = generate(user_id)
+        return jsonify({"kb": kb_text}), 200
     except Exception as e:
-        import traceback
-        print("ERROR in /live_kb:", traceback.format_exc())
-        return f"Error generating KB: {str(e)}", 500
-
-@app.route("/speak", methods=["POST"])
-def speak():
-    try:
-        user_id = get_user_id()
-        user_input = request.json.get("text")
-        if not user_input:
-            return jsonify({"error": "Missing 'text' in request."}), 400
-        memory = load_memory(user_id=user_id)
-        memory = analyze_emotion_and_update(memory, user_input)
-        save_memory(memory, user_id=user_id)
-        prompt = build_prompt(memory, user_id=user_id)
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": API_KEY,
-        }
-
-        dynamic_vars = build_dynamic_vars(user_id, memory)
-        data = {
-            "text": prompt,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
-            "dynamic_variables": dynamic_vars
-        }
-
-        response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
-            json=data,
-            headers=headers,
-        )
-        if response.status_code == 200:
-            OUTPUT_FILE.parent.mkdir(exist_ok=True)
-            with open(OUTPUT_FILE, "wb") as f:
-                f.write(response.content)
-            log_entry = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "user_id": user_id,
-                "user_input": user_input,
-                "trust_level": memory.get("trust_level"),
-                "anxiety_index": memory.get("anxiety_index"),
-                "coke_status": memory.get("coke_status"),
-                "session_count": memory.get("session_count"),
-                "edge_index": memory.get("edge_index"),
-                "ai_summary": "Generated via /speak endpoint",
-            }
-            send_to_supabase(log_entry)
-            return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
-        else:
-            return jsonify({"error": response.text}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# === SELF-SPEAK MODE (Anna reflection) ===
-@app.route("/self_speak", methods=["POST"])
-def self_speak():
-    """
-    Self-reflection mode — Anna talks to herself.
-    No ElevenLabs API call; text-only reflection output.
-    """
-    try:
-        user_id = "anna_self"
-        user_input = request.json.get("text")
-        if not user_input:
-            return jsonify({"error": "Missing 'text' in request."}), 400
-
-        memory = load_memory(user_id=user_id)
-        memory = analyze_emotion_and_update(memory, user_input)
-        save_memory(memory, user_id=user_id)
-        prompt = build_prompt(memory, user_id=user_id)
-
-        reflection_output = (
-            f"[Anna Reflection Mode]\n"
-            f"Input: {user_input}\n\n"
-            f"Memory State → trust:{memory['trust_level']} "
-            f"anxiety:{memory['anxiety_index']} "
-            f"edge:{memory['edge_index']} "
-            f"coke:{memory['coke_status']}\n\n"
-            f"Response Simulation:\n{prompt}"
-        )
-
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_id": user_id,
-            "user_input": user_input,
-            "ai_summary": "Anna self-reflection event",
-            "trust_level": memory.get("trust_level"),
-            "anxiety_index": memory.get("anxiety_index"),
-            "coke_status": memory.get("coke_status"),
-            "session_count": memory.get("session_count"),
-            "edge_index": memory.get("edge_index"),
-        }
-        send_to_supabase(log_entry)
-
-        return jsonify({
-            "mode": "self_reflection",
-            "response": reflection_output,
-            "memory": memory
-        }), 200
-
-    except Exception as e:
-        import traceback
-        print(f"⚠️ Error in /self_speak: {traceback.format_exc()}")
+        print(f"ERROR in /live_kb: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
-    from schema_loader import load_schema
-    user_id = get_user_id()
-    schema = load_schema()
-    snapshot_lines = ["# Memory Snapshot"]
-    memory = load_memory(user_id=user_id)
-    for field in schema:
-        name = field["name"]
-        snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
-    snapshot_lines.append(f"Full Memory Blob: {json.dumps(memory, indent=2)}")
-    return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
+    try:
+        user_id = get_user_id()
+        memory = load_memory(user_id)
+        return jsonify(memory), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/speak", methods=["POST"])
+def speak():
+    try:
+        data = request.get_json()
+        text = data.get("text", "")
+        user_id = get_user_id()
+        memory = load_memory(user_id)
+        memory = analyze_emotion_and_update(memory, text)
+        save_memory(user_id, memory)
+        dynamic_vars = build_dynamic_vars(user_id, memory)
+        prompt = build_prompt(text, memory, dynamic_vars)
+        headers = {"xi-api-key": API_KEY, "Content-Type": "application/json"}
+        tts_payload = {
+            "text": prompt,
+            "voice_id": VOICE_ID,
+            "model_id": "eleven_turbo_v2"
+        }
+        response = requests.post("https://api.elevenlabs.io/v1/text-to-speech/eleven_turbo_v2", 
+                                 headers=headers, json=tts_payload)
+        if response.status_code == 200:
+            OUTPUT_FILE.write_bytes(response.content)
+            return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
+        return jsonify({"error": "TTS failed"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():

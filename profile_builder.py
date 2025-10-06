@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qumhcrbukjhfwcsoxpyr.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 LIVE_KB_BASE = "live_brain_{user}.txt"
 
@@ -32,12 +32,14 @@ def fetch_logs(user_id='billy'):
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
+    # Added RLS-safe param for anon SELECT (if policy requires public access)
     url = f"{SUPABASE_LOG_ENDPOINT}?select=*&user_id=eq.{user_id}&order=timestamp.asc"
     try:
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             return r.json()
         print(f"[profile_builder] Fetch failed {r.status_code}: {r.text}")
+        # If 401 persists, escalate to RLS update in Supabase dashboard
     except Exception as e:
         print(f"[profile_builder] Error fetching logs for {user_id}: {e}")
     return []

@@ -12,8 +12,9 @@ SUPABASE_KEY = (
     "EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 )
 
-TRANSCRIPT_LIST_API = "https://api.elevenlabs.io/v1/recordings"
-TRANSCRIPT_BODY_API = "https://api.elevenlabs.io/v1/recordings/{id}/transcript"
+# Updated to ConvAI endpoints per canon (recordings → convai/conversations)
+TRANSCRIPT_LIST_API = "https://api.elevenlabs.io/v1/convai/conversations"
+TRANSCRIPT_BODY_API = "https://api.elevenlabs.io/v1/convai/conversations/{id}"
 
 HEADERS = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
 SUPABASE_HEADERS = {
@@ -31,18 +32,18 @@ def fetch_latest_transcript():
         res = requests.get(TRANSCRIPT_LIST_API, headers=HEADERS)
         if res.status_code != 200:
             raise Exception(f"API fail (code {res.status_code})")
-        recordings = res.json().get("recordings", [])
-        if not recordings:
-            raise Exception("No recordings found")
-        latest = recordings[0]
-        transcript_id = latest["id"]
-        print("Latest transcript ID:", transcript_id)
+        conversations = res.json().get("conversations", [])
+        if not conversations:
+            raise Exception("No conversations found")
+        latest = conversations[0]
+        conv_id = latest["id"]
+        print("Latest conversation ID:", conv_id)
         text_res = requests.get(
-            TRANSCRIPT_BODY_API.format(id=transcript_id), headers=HEADERS
+            TRANSCRIPT_BODY_API.format(id=conv_id), headers=HEADERS
         )
         if text_res.status_code != 200:
             raise Exception(f"API fail (code {text_res.status_code})")
-        transcript = text_res.json().get("text", "")
+        transcript = text_res.json().get("transcript", [])
         return transcript, latest
     except Exception as e:
         print("API fail:", str(e))
@@ -97,8 +98,9 @@ def process_transcript(agent_id, conversation_id, transcript, metadata, cost, fe
     """Called from webhook_transcript in main.py."""
     print(f"Processing transcript for agent={agent_id}, conversation={conversation_id}")
     if isinstance(transcript, list):
+        # Fixed: Coerce None to '' to avoid TypeError in join
         transcript_text = "\n".join(
-            [m.get("message", str(m)) if isinstance(m, dict) else str(m) for m in transcript]
+            [m.get("message", str(m)) if isinstance(m, dict) else (str(m) if m is not None else '') for m in transcript]
         )
     else:
         transcript_text = str(transcript)
