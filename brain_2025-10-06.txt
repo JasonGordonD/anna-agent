@@ -42,7 +42,13 @@ silence_response_time: None
 pattern_lock_count: 0
 
 ## Observed Behavior Tags
-- Input: agent_2901k6qjvk71e9cbftde9wzyt94n
+- Input: Hello?
+Yeah, hi, how are you?
+Hello, Billy. I'm feeling quite composed tonight, the air in Bucharest...
+This is not Billy.
+Oh, I see... my apologies for the assumption. Who might I have the pleasure of speaking with this evening?
+This is Rami.
+Rami... that's a name with a certain warmth to it. It's lovely to meet you. What brings you here this evening?
 - Summary: Scored via transcript_processor.py
 - Tags: []
 

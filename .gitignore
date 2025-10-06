@@ -30,3 +30,10 @@ __pycache__/
 *.txt
 *.log
 compute_sig.py
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.txt
+*.wav
+*.mp3
