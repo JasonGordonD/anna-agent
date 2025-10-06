@@ -1,0 +1,20 @@
+# Ignore local Python environment and build files
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.wav
+*.png
+*.txt
+*.json
+*.log
+
+# Node modules and related
+node_modules/
+package-lock.json
+package.json
+
+# Temporary files
+*.save
+latest_transcript.json
+mock_transcript.txt
