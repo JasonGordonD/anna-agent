@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify
+kfrom flask import Flask, request, send_file, jsonify
 from memory import load_memory, save_memory
 from prompt_builder import build_prompt
 import requests
@@ -11,12 +11,13 @@ import subprocess
 import hmac
 import hashlib
 import time
+from openai import OpenAI  # pip install openai for Grok compatibility
 
 app = Flask(__name__)
 
 # === CONFIGURATION ===
 API_KEY = "sk_395144d7d8604f470abb8d983081770c371c3011e03962e7"
-VOICE_ID = "zHX13TdWb6f856P3Hqta"
+VOICE_ID = "9c7dc287-1354-4fcc-a706-377f9a44e238"
 OUTPUT_FILE = Path("/tmp/anna_output.mp3")
 LOG_FILE = Path("/tmp/session_log.json")
 WEBHOOK_SECRET = "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97ce13be19"
@@ -24,6 +25,7 @@ SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 CARTESIA_API_KEY = os.getenv('CARTESIA_API_KEY', "sk_car_wkFkGShryW7kszY8uT6r7L")
+GROK_API_KEY = os.getenv('GROK_API_KEY')  # Set env on Render; no default per rule
 
 # === USER ID EXTRACTION ===
 def get_user_id():
@@ -121,30 +123,47 @@ def snapshot():
 def speak():
     try:
         data = request.get_json()
-        text = data.get("text", "")
+        user_input = data.get("text", "")
         user_id = get_user_id()
         memory = load_memory(user_id)
-        memory = analyze_emotion_and_update(memory, text)
+        memory = analyze_emotion_and_update(memory, user_input)
         save_memory(user_id, memory)
         dynamic_vars = build_dynamic_vars(user_id, memory)
-        prompt = build_prompt(text, memory, dynamic_vars)
-        headers = {
+        prompt = build_prompt(user_input, memory, dynamic_vars)
+
+        # Grok text gen (OpenAI-compatible client)
+        if not GROK_API_KEY:
+            raise ValueError("GROK_API_KEY env var missing—set on Render")
+        grok_client = OpenAI(base_url="https://api.x.ai/v1", api_key=GROK_API_KEY)
+        grok_response = grok_client.chat.completions.create(
+            model="grok-beta",  # Or your custom model
+            messages=[
+                {"role": "system", "content": "You are Anna, a warm Romanian AI agent with empathetic tones."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        grok_text = grok_response.choices[0].message.content
+
+        # Cartesia TTS (Sonic-2 for RO, low-latency MP3)
+        cartesia_headers = {
             "Authorization": f"Bearer {CARTESIA_API_KEY}",
             "Content-Type": "application/json",
             "Cartesia-Version": "2025-04-16"
         }
-        tts_payload = {
-            "text": prompt,
-            "voice": "sonic-ro-female",
-            "model": "sonic-2",
-            "speed": 1.0,
+        cartesia_payload = {
+            "text": grok_text,
+            "voice": "sonic-ro-female",  # RO variant (dashboard confirm; fallback "en-US-female")
+            "model": "sonic-2-multilingual",
+            "speed": 1.0,  # Tie to session_duration_secs if needed
             "format": "mp3"
         }
-        response = requests.post("https://api.cartesia.ai/v1/tts/bytes", headers=headers, json=tts_payload)
-        if response.status_code == 200:
-            OUTPUT_FILE.write_bytes(response.content)
+        tts_response = requests.post("https://api.cartesia.ai/v1/tts/bytes", headers=cartesia_headers, json=cartesia_payload)
+        if tts_response.status_code == 200:
+            OUTPUT_FILE.write_bytes(tts_response.content)
             return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
-        return jsonify({"error": "TTS failed"}), 500
+        return jsonify({"error": f"TTS failed: {tts_response.text}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
