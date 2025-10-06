@@ -23,6 +23,7 @@ WEBHOOK_SECRET = "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97c
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
+CARTESIA_API_KEY = os.getenv('CARTESIA_API_KEY', "sk_car_wkFkGShryW7kszY8uT6r7L")
 
 # === USER ID EXTRACTION ===
 def get_user_id():
@@ -127,14 +128,19 @@ def speak():
         save_memory(user_id, memory)
         dynamic_vars = build_dynamic_vars(user_id, memory)
         prompt = build_prompt(text, memory, dynamic_vars)
-        headers = {"xi-api-key": API_KEY, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {CARTESIA_API_KEY}",
+            "Content-Type": "application/json",
+            "Cartesia-Version": "2025-04-16"
+        }
         tts_payload = {
             "text": prompt,
-            "voice_id": VOICE_ID,
-            "model_id": "eleven_turbo_v2"
+            "voice": "sonic-ro-female",
+            "model": "sonic-2",
+            "speed": 1.0,
+            "format": "mp3"
         }
-        response = requests.post("https://api.elevenlabs.io/v1/text-to-speech/eleven_turbo_v2", 
-                                 headers=headers, json=tts_payload)
+        response = requests.post("https://api.cartesia.ai/v1/tts/bytes", headers=headers, json=tts_payload)
         if response.status_code == 200:
             OUTPUT_FILE.write_bytes(response.content)
             return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
