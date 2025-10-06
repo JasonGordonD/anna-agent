@@ -6,23 +6,21 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-from profile_builder import generate
+from profile_builder import generate  # Now returns str
 
 app = Flask(__name__)
 
 # Use env vars (fallback to canonized for local; Vercel injects)
 API_KEY = os.getenv('ELEVENLABS_API_KEY', "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed")
 VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")  # Canonized for TTS
-OUTPUT_FILE = Path("anna_output.mp3")
-LOG_FILE = Path("session_log.json")  # Optional local append
+OUTPUT_FILE = Path("/tmp/anna_output.mp3")  # Vercel writable /tmp
+LOG_FILE = Path("/tmp/session_log.json")  # Optional /tmp
 
 SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
-# Startup: Generate live KB on module import (runs on gunicorn boot)
-print("Starting Anna: Generating live KB...")
-generate()
+# No startup gen (Vercel read-only; on-demand in /live_kb)
 
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
@@ -58,16 +56,14 @@ def health():
 @app.route("/live_kb", methods=["GET"])
 def live_kb():
     try:
-        kb_path = Path(__file__).parent / "live_brain.txt"
-        if not kb_path.exists():
-            return "Error: live_brain.txt not found. Please run profile_builder.py to generate it.", 404
-        with open(kb_path, "r") as f:
-            content = f.read()
-        return content, 200, {"Content-Type": "text/plain"}
+        kb_content = generate()  # Call on-demand, returns str
+        if not kb_content:
+            return "Error: KB generation failed.", 500
+        return kb_content, 200, {"Content-Type": "text/plain"}
     except Exception as e:
         import traceback
         print("ERROR in /live_kb:", traceback.format_exc())
-        return f"Error loading KB: {str(e)}", 500
+        return f"Error generating KB: {str(e)}", 500
 
 @app.route("/speak", methods=["POST"])
 def speak():
