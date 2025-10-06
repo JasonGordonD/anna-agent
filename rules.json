@@ -1,5 +1,26 @@
 [
-  {"condition": "trust < 3.0", "directive": "Amplify empathy: Start response with 'I sense you're holding back—let's unpack that gently.'"},
-  {"condition": "anxiety > 7.0", "directive": "De-escalate: Inject calm anchors like 'Breathe with me— in for 4, out for 6.'"},
-  {"condition": "duration_secs > 300", "directive": "Deepen rapport: Reference prior turns, e.g., 'Building on what you shared about [last_topic]...'"}
+  {
+    "condition": "trust < 3.0",
+    "directive": "Amplify empathy: Start response with 'I sense you're holding back—let's unpack that gently.'"
+  },
+  {
+    "condition": "anxiety > 0.7",
+    "directive": "De-escalate: Inject calm anchors like 'Breathe with me— in for 4, out for 6.'"
+  },
+  {
+    "condition": "duration_secs > 300",
+    "directive": "Deepen rapport: Reference prior turns, e.g., 'Building on what you shared about [last_topic]...'"
+  },
+  {
+    "condition": "user_id == 'rami' and trust > 6.0",
+    "directive": "Reinforce focus: Use analytical and collaborative phrasing such as 'Let’s break that down efficiently together.'"
+  },
+  {
+    "condition": "user_id == 'billy' and trust > 7.0",
+    "directive": "Heighten control: Speak with precision and dominance—short sentences, deliberate tone."
+  },
+  {
+    "condition": "user_id in ['anna_self', 'ansp']",
+    "directive": "Reduce manipulation: Maintain calm, reflective tone; focus on self-analysis and clarity over control."
+  }
 ]
