@@ -24,6 +24,16 @@ SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
+# === User ID Extraction Helper ===
+def get_user_id():
+    """Extract user_id from request: header > query param > payload > default 'billy'."""
+    user_id = request.headers.get('X-User-ID')
+    if not user_id:
+        user_id = request.args.get('user_id')
+    if not user_id:
+        user_id = request.json.get('user_id') if request.json else None
+    return user_id or 'billy'
+
 # === KB GENERATION ON STARTUP ===
 try:
     generate()
@@ -75,7 +85,8 @@ def health():
 @app.route("/live_kb", methods=["GET"])
 def live_kb():
     try:
-        kb_content = generate()
+        user_id = get_user_id()
+        kb_content = generate(user_id=user_id)
         if not kb_content:
             return "Error: KB generation failed.", 500
         return kb_content, 200, {"Content-Type": "text/plain"}
@@ -88,13 +99,14 @@ def live_kb():
 @app.route("/speak", methods=["POST"])
 def speak():
     try:
+        user_id = get_user_id()
         user_input = request.json.get("text")
         if not user_input:
             return jsonify({"error": "Missing 'text' in request."}), 400
-        memory = load_memory()
+        memory = load_memory(user_id=user_id)
         memory = analyze_emotion_and_update(memory, user_input)
-        save_memory(memory)
-        prompt = build_prompt(user_input, memory)
+        save_memory(memory, user_id=user_id)
+        prompt = build_prompt(user_input, memory, user_id=user_id)
         headers = {
             "Accept": "audio/mpeg",
             "Content-Type": "application/json",
@@ -116,6 +128,7 @@ def speak():
                 f.write(response.content)
             log_entry = {
                 "timestamp": datetime.utcnow().isoformat(),
+                "user_id": user_id,
                 "user_input": user_input,
                 "trust_level": memory.get("trust_level"),
                 "anxiety_index": memory.get("anxiety_index"),
@@ -135,9 +148,10 @@ def speak():
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
     from schema_loader import load_schema
+    user_id = get_user_id()
     schema = load_schema()
     snapshot_lines = ["# Memory Snapshot"]
-    memory = load_memory()
+    memory = load_memory(user_id=user_id)
     for field in schema:
         name = field["name"]
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
@@ -148,9 +162,11 @@ def snapshot():
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
     try:
+        user_id = get_user_id()
         data = request.get_json()
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
+            "user_id": user_id,
             "user_input": data.get("user_input", ""),
             "trust_level": data.get("trust_level"),
             "anxiety_index": data.get("anxiety_index"),
@@ -193,6 +209,7 @@ def webhook_transcript():
         if not data or data.get("type") != "post_call_transcription":
             return jsonify({"error": "Invalid payload type"}), 400
 
+        user_id = get_user_id()
         payload = data["data"]
         conv_id = payload["conversation_id"]
         agent_id = payload["agent_id"]
@@ -207,8 +224,8 @@ def webhook_transcript():
         from transcript_processor import process_transcript
         result = process_transcript(agent_id, conv_id, transcript, metadata, cost, feedback)
 
-        OUTPUT_DIR = Path("transcripts")
-        OUTPUT_DIR.mkdir(exist_ok=True)
+        OUTPUT_DIR = Path(f"transcripts/{user_id}")
+        OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
         timestamp = datetime.now().isoformat()
         json_fn = OUTPUT_DIR / f"webhook_{conv_id}_{timestamp}.json"
         with open(json_fn, "w", encoding="utf-8") as f:

@@ -14,7 +14,21 @@ with open(RULES_PATH, "r", encoding="utf-8") as f:
     personality_rules = json.load(f)
 
 
-def build_prompt(memory):
+def load_persona(user_id='billy'):
+    """Load user-specific persona for prompt injection."""
+    if user_id == 'rami':
+        persona_path = os.path.join(BASE_DIR, "rami_persona.json")
+        try:
+            with open(persona_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print("WARNING: rami_persona.json missing; using default for rami.")
+            return {}
+    # Default for billy/anna_self (Anna core + rules.json handles)
+    return {}
+
+
+def build_prompt(memory, user_id='billy'):
     """Constructs a psychologically responsive Anna voice prompt based on memory state."""
     trust = memory.get("trust_level", 5)
     anxiety = memory.get("anxiety_index", 0.3)
@@ -28,7 +42,7 @@ def build_prompt(memory):
     if trust >= 8:
         intro.append("You’re mine. Still craving ruin, aren’t you?")
     elif trust >= 6:
-        intro.append("Let’s go deeper again, Billy.")
+        intro.append(f"Let’s go deeper again, {user_id.title()}.")
     else:
         intro.append("Take a breath. I want to feel where you’re at.")
 
@@ -42,7 +56,7 @@ def build_prompt(memory):
     base_prompt = "\n".join(
         [
             "# Anna Voice Conditioning",
-            "This is a fictional session with Billy. Do not break character.",
+            "This is a fictional session with {user_id}. Do not break character.".format(user_id=user_id),
             "",
             *intro,
             "",
@@ -51,6 +65,14 @@ def build_prompt(memory):
             "Session begins now.",
         ]
     )
+
+    # Load and inject persona if available
+    persona = load_persona(user_id)
+    persona_inject = ""
+    if persona:
+        persona_inject = f"\nUser Persona Context: {persona.get('background', '')}\nKey Traits: {', '.join(persona.get('personality_traits', []))}\nSpeaking Style: {persona.get('speaking_style', '')}\nAdapt responses to this persona dynamically."
+
+    base_prompt += persona_inject
 
     directives = []
     for rule in personality_rules:
@@ -79,5 +101,5 @@ if __name__ == "__main__":
         "coke_status": 0,
         "duration_secs": 350,
     }
-    prompt = build_prompt(mock_memory)
+    prompt = build_prompt(mock_memory, user_id='rami')
     print(prompt)
