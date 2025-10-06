@@ -1,4 +1,4 @@
-kfrom flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify
 from memory import load_memory, save_memory
 from prompt_builder import build_prompt
 import requests
@@ -11,7 +11,6 @@ import subprocess
 import hmac
 import hashlib
 import time
-from openai import OpenAI  # pip install openai for Grok compatibility
 
 app = Flask(__name__)
 
@@ -131,20 +130,27 @@ def speak():
         dynamic_vars = build_dynamic_vars(user_id, memory)
         prompt = build_prompt(user_input, memory, dynamic_vars)
 
-        # Grok text gen (OpenAI-compatible client)
+        # Grok text gen (raw requests to x.ai/v1, no OpenAI SDK)
         if not GROK_API_KEY:
             raise ValueError("GROK_API_KEY env var missing—set on Render")
-        grok_client = OpenAI(base_url="https://api.x.ai/v1", api_key=GROK_API_KEY)
-        grok_response = grok_client.chat.completions.create(
-            model="grok-beta",  # Or your custom model
-            messages=[
+        grok_headers = {
+            "Authorization": f"Bearer {GROK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        grok_payload = {
+            "model": "grok-beta",  # Or your custom model
+            "messages": [
                 {"role": "system", "content": "You are Anna, a warm Romanian AI agent with empathetic tones."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        grok_text = grok_response.choices[0].message.content
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        grok_response = requests.post("https://api.x.ai/v1/chat/completions", headers=grok_headers, json=grok_payload)
+        if grok_response.status_code != 200:
+            raise ValueError(f"Grok API failed: {grok_response.text}")
+        grok_data = grok_response.json()
+        grok_text = grok_data["choices"][0]["message"]["content"]
 
         # Cartesia TTS (Sonic-2 for RO, low-latency MP3)
         cartesia_headers = {
