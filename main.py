@@ -21,6 +21,15 @@ SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
+# Auto-KB on startup (Render writable; Vercel on-demand fallback)
+@app.before_first_request
+def auto_generate_kb():
+    try:
+        generate()  # Pulls latest Supabase blobs to live_brain.txt
+        print("ℹ️ Auto-KB generated on startup (trust:5.0, duration:41s integrated)")
+    except Exception as e:
+        print(f"⚠️ Auto-KB error: {e} - Using cached KB")
+
 # No startup gen (Vercel read-only; on-demand in /live_kb)
 
 def analyze_emotion_and_update(memory, user_input):
