@@ -42,14 +42,14 @@ silence_response_time: None
 pattern_lock_count: 0
 
 ## Observed Behavior Tags
-- Input: Test transcript with good boy, coke, edge, worthless, mine, pause.
+- Input: agent_2901k6qjvk71e9cbftde9wzyt94n
 - Summary: Scored via transcript_processor.py
-- Tags: ['humiliation', 'coke_ref', 'hesitation']
+- Tags: []
 
 ## Trends
 ↑ Edge increasing
 ↑ Anxiety increasing
-↑ Trust increasing
+↓ Trust dropping
 
 ## Conditional Behavior Modulation
 No modulation triggers.

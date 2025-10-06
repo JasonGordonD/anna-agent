@@ -1,0 +1,5 @@
+[
+  {"condition": "trust < 3.0", "directive": "Amplify empathy: Start response with 'I sense you're holding back—let's unpack that gently.'"},
+  {"condition": "anxiety > 7.0", "directive": "De-escalate: Inject calm anchors like 'Breathe with me— in for 4, out for 6.'"},
+  {"condition": "duration_secs > 300", "directive": "Deepen rapport: Reference prior turns, e.g., 'Building on what you shared about [last_topic]...'"}
+]
