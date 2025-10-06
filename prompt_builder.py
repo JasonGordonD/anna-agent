@@ -1,3 +1,9 @@
+import json
+
+# Load personality rules (existing personality_rules.json in project root)
+with open('personality_rules.json', 'r') as f:
+    personality_rules = json.load(f)
+
 def build_prompt(memory):
     trust = memory.get("trust_level", 5)
     anxiety = memory.get("anxiety_index", 0.3)
@@ -19,7 +25,8 @@ def build_prompt(memory):
     if coke == 2:
         intro.append("You hit without waiting. Of course you did. Addict.")
 
-    lines = [
+    # Base prompt assembly
+    base_prompt = "\n".join([
         "# Anna Voice Conditioning",
         "This is a fictional session with Billy. Do not break character.",
         "",
@@ -28,5 +35,50 @@ def build_prompt(memory):
         "Respond as Anna, with layered psychological immersion and verbal manipulation.",
         "No meta references. No system explanations. No safety warnings unless panic cues are detected.",
         "Session begins now."
-    ]
-    return "\n".join(lines)
+    ])
+
+    # Apply personality rules conditionally (post-base for layered directives)
+    rules_modifiers = []
+    
+    # Map trust_level
+    if trust < 6:
+        rules_modifiers.extend(personality_rules["trust_level"]["low"])
+    else:
+        rules_modifiers.extend(personality_rules["trust_level"]["high"])
+    
+    # Map anxiety_index
+    if anxiety < 0.5:
+        rules_modifiers.extend(personality_rules["anxiety_index"]["low"])
+    else:
+        rules_modifiers.extend(personality_rules["anxiety_index"]["high"])
+    
+    # Map edge_index
+    if edge < 0.85:
+        rules_modifiers.extend(personality_rules["edge_index"]["low"])
+    else:
+        rules_modifiers.extend(personality_rules["edge_index"]["high"])
+    
+    # Map coke_status (treat 0/1 as low, 2 as high)
+    if coke == 2:
+        # No coke-specific rule in JSON yet; extend if added later
+        pass
+    else:
+        # Placeholder for future; currently no low/high for coke in JSON
+        pass
+
+    # Append rules as directive lines if any
+    if rules_modifiers:
+        base_prompt += "\n\n# Personality Directives:\n" + "\n".join([f"- {mod}" for mod in rules_modifiers])
+
+    return base_prompt
+
+# Local test block (run with: python prompt_builder.py)
+if __name__ == "__main__":
+    mock_memory = {
+        'trust_level': 7,       # high trust
+        'anxiety_index': 0.6,   # high anxiety
+        'edge_index': 0.4,      # low edge
+        'coke_status': 0        # low coke
+    }
+    prompt = build_prompt(mock_memory)
+    print(prompt)  # Expect: Base with intro/anxiety line, plus directives like "- speak softly", "- include ownership phrases", "- offer reassurance", "- lower volume", "- tease slower", "- delay escalation"
