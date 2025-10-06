@@ -11,26 +11,24 @@ import subprocess  # For processor hook
 
 app = Flask(__name__)
 
-# Use env vars (fallback to canonized for local; Vercel injects)
+# === CONFIGURATION ===
 API_KEY = os.getenv('ELEVENLABS_API_KEY', "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed")
-VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")  # Canonized for TTS
-OUTPUT_FILE = Path("/tmp/anna_output.mp3")  # Vercel writable /tmp
-LOG_FILE = Path("/tmp/session_log.json")  # Optional /tmp
+VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID', "zHX13TdWb6f856P3Hqta")
+OUTPUT_FILE = Path("/tmp/anna_output.mp3")
+LOG_FILE = Path("/tmp/session_log.json")
 
 SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
 
-# Auto-KB on startup (Render writable; Vercel on-demand fallback)
-@app.before_first_request
-def auto_generate_kb():
-    try:
-        generate()  # Pulls latest Supabase blobs to live_brain.txt
-        print("ℹ️ Auto-KB generated on startup (trust:5.0, duration:41s integrated)")
-    except Exception as e:
-        print(f"⚠️ Auto-KB error: {e} - Using cached KB")
+# === AUTO-GENERATE KB ON STARTUP ===
+# Flask 3.x removed before_first_request, so we trigger this once at import.
+try:
+    generate()
+    print("ℹ️ Auto-KB generated on startup (trust:5.0, duration:41s integrated)")
+except Exception as e:
+    print(f"⚠️ Auto-KB error: {e} - Using cached KB")
 
-# No startup gen (Vercel read-only; on-demand in /live_kb)
 
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
@@ -50,6 +48,7 @@ def analyze_emotion_and_update(memory, user_input):
     memory["anxiety_index"] = round(min(max(memory["anxiety_index"], 0), 1), 2)
     return memory
 
+
 def send_to_supabase(log_entry):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -59,14 +58,16 @@ def send_to_supabase(log_entry):
     response = requests.post(SUPABASE_LOG_ENDPOINT, headers=headers, json=log_entry, timeout=5)
     print("DEBUG: Sent to Supabase with code", response.status_code)
 
+
 @app.route("/")
 def health():
     return "Anna agent is running."
 
+
 @app.route("/live_kb", methods=["GET"])
 def live_kb():
     try:
-        kb_content = generate()  # Call on-demand, returns str
+        kb_content = generate()
         if not kb_content:
             return "Error: KB generation failed.", 500
         return kb_content, 200, {"Content-Type": "text/plain"}
@@ -74,6 +75,7 @@ def live_kb():
         import traceback
         print("ERROR in /live_kb:", traceback.format_exc())
         return f"Error generating KB: {str(e)}", 500
+
 
 @app.route("/speak", methods=["POST"])
 def speak():
@@ -135,6 +137,7 @@ def speak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
     from schema_loader import load_schema
@@ -146,6 +149,7 @@ def snapshot():
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
     snapshot_lines.append(f"Full Memory Blob: {json.dumps(memory, indent=2)}")
     return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
+
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
@@ -166,16 +170,15 @@ def log_memory():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# New webhook route for ElevenLabs post-call transcript push (zero-manual automation)
-@app.route('/webhook_transcript', methods=['POST'])
+
+@app.route("/webhook_transcript", methods=["POST"])
 def webhook_transcript():
     try:
         data = request.json
-        transcript = data.get('transcript', '')  # Full user + agent text
-        metadata = data.get('metadata', {})  # e.g., edge_index, trust_level if enabled
+        transcript = data.get('transcript', '')
+        metadata = data.get('metadata', {})
         conv_id = data.get('conversation_id', 'unknown')
 
-        # Save as JSON for processor
         OUTPUT_DIR = Path("transcripts")
         OUTPUT_DIR.mkdir(exist_ok=True)
         timestamp = datetime.now().isoformat()
@@ -184,21 +187,19 @@ def webhook_transcript():
         with open(json_fn, "w", encoding="utf-8") as f:
             json.dump(full_data, f, indent=2)
 
-        # Auto-hook processor (inserts to Supabase, updates KB)
         result = subprocess.run(["python", "transcript_processor.py", str(json_fn)], check=True, capture_output=True, cwd=os.path.dirname(__file__))
         print(f"🔄 Processed: {result.stdout.decode()}")
 
-        # Fallback direct insert if processor skips (match schema)
         log_entry = {
             "timestamp": timestamp,
-            "user_input": transcript[:500] if transcript else "N/A",  # Truncate for schema
+            "user_input": transcript[:500] if transcript else "N/A",
             "ai_summary": metadata.get('ai_summary', 'Web hook summary TBD'),
             "trust_level": metadata.get('trust_level', 0),
             "anxiety_index": metadata.get('anxiety_index', 0),
             "coke_status": metadata.get('coke_status', 0),
             "session_count": metadata.get('session_count', 0),
             "edge_index": metadata.get('edge_index', 0),
-            "memory_blob": json.dumps(full_data)  # Blob for full
+            "memory_blob": json.dumps(full_data)
         }
         send_to_supabase(log_entry)
 
@@ -209,6 +210,7 @@ def webhook_transcript():
     except Exception as e:
         print(f"⚠️ Webhook error: {str(e)}")
         return jsonify({"status": "error", "detail": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)

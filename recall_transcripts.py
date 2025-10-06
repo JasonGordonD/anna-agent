@@ -1,51 +1,84 @@
-# recall_transcripts.py — Retrieve and store conversation transcripts from ElevenLabs Agents Platform
-
-import requests, json, time
+import requests
+import json
+import os
 from datetime import datetime
-from pathlib import Path
+import time
 
-# === CONFIGURATION ===
-# replace the strings below with your test key and agent ID exactly as written
-ELEVENLABS_API_KEY = "sk_68d5538cba995e9bc5a318fc1b344a5fa8c2e2d557ae4019"
+API_KEY = os.getenv("XI_API_KEY", "sk_0434e282b02f333781fb7568cb4f9cbbf4449442a1537d36")  # Agents key default
 AGENT_ID = "agent_2901k6qjvk71e9cbftde9wzyt94n"
-
 BASE_URL = "https://api.elevenlabs.io/v1"
-CONVERSATIONS_ENDPOINT = f"{BASE_URL}/agents/{AGENT_ID}/conversations"
-TRANSCRIPT_ENDPOINT = f"{BASE_URL}/agents/{AGENT_ID}/conversations/{{id}}/transcript"
-OUTPUT_DIR = Path("transcripts")
-HEADERS = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
+HEADERS = {"xi-api-key": API_KEY}
 
-def fetch_conversations():
-    r = requests.get(CONVERSATIONS_ENDPOINT, headers=HEADERS, timeout=10)
-    if r.status_code != 200:
-        print("❌", r.status_code, r.text)
-        return []
-    return r.json().get("conversations", [])
+transcripts_dir = "transcripts"
+os.makedirs(transcripts_dir, exist_ok=True)
 
-def fetch_transcript(conv_id):
-    r = requests.get(TRANSCRIPT_ENDPOINT.format(id=conv_id), headers=HEADERS, timeout=10)
-    if r.status_code != 200:
-        print("⚠️", r.status_code, r.text)
-        return None
-    return r.json().get("text", "")
+print(f"ℹ️ Using key: {API_KEY[:10]}...{API_KEY[-4:]} | Agent: {AGENT_ID}")
 
-def save_transcript(conv_id, text):
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    fn = OUTPUT_DIR / f"conversation_{conv_id}.txt"
-    with open(fn, "w", encoding="utf-8") as f:
-        f.write(text)
-    print(f"✅ Saved transcript: {fn}")
+# Step 1: List conversations (paginated, max 100) with debug & retry
+conversations = []
+cursor = None
+page = 1
+max_retries = 3
+while True:
+    params = {"agent_id": AGENT_ID, "limit": 100}
+    if cursor:
+        params["next_cursor"] = cursor
+    print(f"ℹ️ Page {page}: Params {params}")
+    for retry in range(max_retries):
+        response = requests.get(f"{BASE_URL}/convai/conversations", headers=HEADERS, params=params)
+        print(f"ℹ️ Status: {response.status_code} | Response preview: {response.text[:200]}...")
+        if response.status_code == 200:
+            break
+        elif response.status_code in [401, 404]:
+            print(f"⚠️ {response.status_code}: Key/Agent issue—check export/UI link")
+            exit(1)
+        else:
+            print(f"⚠️ Retry {retry+1}/{max_retries}: {response.status_code} - {response.text[:100]}")
+            time.sleep(2 ** retry)  # Expo backoff
+    else:
+        print("⚠️ Max retries hit—abort list")
+        exit(1)
+    data = response.json()
+    page_data = data.get("conversations", [])  # Fixed: Use "conversations" key
+    conversations.extend(page_data)
+    cursor = data.get("next_cursor")
+    print(f"ℹ️ Page {page} added {len(page_data)} convos | Total: {len(conversations)}")
+    if not cursor:
+        break
+    page += 1
+    time.sleep(0.5)  # Rate gentle
 
-if __name__ == "__main__":
-    print(f"🎧 Using agent {AGENT_ID}")
-    conversations = fetch_conversations()
-    if not conversations:
-        print("⚠️ No conversations found or API key lacks Agents scope.")
-    for c in conversations:
-        cid = c.get("id")
-        print("Pulling", cid)
-        txt = fetch_transcript(cid)
-        if txt:
-            save_transcript(cid, txt)
-        time.sleep(2)
-    print("🎯 Done")
+print(f"ℹ️ Fetched {len(conversations)} conversations total")
+
+if not conversations:
+    print("⚠️ Zero convos: UI History empty? Or re-link agent in Settings > API. Run scope_check.sh")
+    exit(1)
+
+# Step 2: Fetch details/transcript for first 3 (test; change to [:] for all 442+)
+for i, conv in enumerate(conversations[:3]):
+    try:
+        conv_id = conv.get("conversation_id", conv.get("id", ""))  # Handle both keys
+        detail_resp = requests.get(f"{BASE_URL}/convai/conversations/{conv_id}", headers=HEADERS)
+        print(f"ℹ️ Detail {conv_id[:8]}...: {detail_resp.status_code}")
+        if detail_resp.status_code == 200:
+            details = detail_resp.json()
+            transcript_data = {
+                "conversation_id": conv_id,
+                "title": conv.get("title", conv.get("call_summary_title", "")),
+                "duration": conv.get("call_duration_secs", conv.get("duration", 0)),
+                "created_at": conv.get("start_time_unix_secs", conv.get("created_at", "")),
+                "transcript": details.get("transcript", details.get("content", "No transcript available - Enable Data Collection in UI Analysis tab"))
+            }
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{transcripts_dir}/{conv_id}_{timestamp}.json"
+            with open(filename, 'w') as f:
+                json.dump(transcript_data, f, indent=2)
+            print(f"✅ Saved {conv_id[:8]}... to {filename} | Transcript len: {len(str(transcript_data['transcript']))}")
+        else:
+            print(f"⚠️ Detail {detail_resp.status_code} for {conv_id[:8]}...: {detail_resp.text[:100]} - Toggle Data Collection?")
+    except Exception as e:
+        print(f"⚠️ Fetch error for {conv['conversation_id'][:8] if 'conversation_id' in conv else 'unknown'}: {e}")
+
+# Auto-sync to Git
+os.system("python git_sync.py")
+print("ℹ️ Git sync triggered—check repo for new JSONs")
