@@ -1,10 +1,11 @@
 import requests
 import json
+import sys
 from datetime import datetime
 from schema_loader import load_schema
 
 # === Real API Keys and URLs (Confirmed) ===
-ELEVENLABS_API_KEY = "545d74e3e46e500a2cf07fdef11338abf4ccf428738d17b9b8d6fa295963c4ed"
+ELEVENLABS_API_KEY = "sk_0434e282b02f333781fb7568cb4f9cbbf4449442a1537d36"  # Agent Platform Key
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co/rest/v1/session_logs"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 
@@ -78,7 +79,16 @@ def post_to_supabase(memory_blob, transcript_text):
 
 if __name__ == "__main__":
     try:
-        transcript, meta = fetch_latest_transcript()
+        if len(sys.argv) > 1:
+            # Mock mode: Load from JSON file
+            with open(sys.argv[1], 'r') as f:
+                mock_data = json.load(f)
+            transcript = mock_data.get("text", "")
+            print(f"📄 Using mock transcript from {sys.argv[1]}")
+        else:
+            # Real mode: Fetch from ElevenLabs
+            transcript, meta = fetch_latest_transcript()
+
         memory_blob = analyze_transcript(transcript)
         post_to_supabase(memory_blob, transcript)
     except Exception as e:

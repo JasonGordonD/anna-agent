@@ -21,7 +21,7 @@ def get_coke_streaks(logs):
     streaks = []
     streak = 0
     for log in reversed(logs):
-        status = log.get("coke_status", 0)
+        status = int(log.get("coke_status") or 0)
         if status >= 1:
             streak += 1
         else:
@@ -34,7 +34,7 @@ def plot_emotions(logs):
     trust = [log.get("trust_level", None) for log in logs]
     anxiety = [log.get("anxiety_index", None) for log in logs]
     edge = [log.get("edge_index", None) for log in logs]
-    coke = [log.get("coke_status", 0) for log in logs]
+    coke = [int(log.get("coke_status") or 0) for log in logs]
     streaks = get_coke_streaks(logs)
 
     fig, axs = plt.subplots(4, 1, figsize=(10, 12), sharex=True)

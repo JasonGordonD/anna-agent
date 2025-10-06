@@ -40,6 +40,8 @@ def fetch_logs():
     return []
 
 def get_tags(text):
+    if text is None:
+        text = ''
     lowered = text.lower()
     tags = []
     if any(x in lowered for x in ["worthless", "pathetic", "good boy"]):
@@ -87,6 +89,10 @@ def safe_num(value, default=0):
         return default
 
 def behavior_modulation(snapshot):
+    """
+    Safely interpret behavioral modulation triggers based on numeric memory fields.
+    Handles None or malformed values gracefully.
+    """
     out = []
     trust = safe_num(snapshot.get("trust_level"))
     anxiety = safe_num(snapshot.get("anxiety_index"))

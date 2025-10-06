@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 import json
 from pathlib import Path
-from profile_builder import load_long_term_profile
+from profile_builder import generate
 
 app = Flask(__name__)
 
@@ -15,8 +15,12 @@ OUTPUT_FILE = Path("anna_output.mp3")
 LOG_FILE = Path("session_log.json")
 
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9zZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
+
+# Startup: Generate live KB on module import (runs on gunicorn boot)
+print("Starting Anna: Generating live KB...")
+generate()
 
 def analyze_emotion_and_update(memory, user_input):
     lowered = user_input.lower()
@@ -125,6 +129,7 @@ def speak():
 
 @app.route("/snapshot", methods=["GET"])
 def snapshot():
+    from schema_loader import load_schema
     schema = load_schema()
     snapshot_lines = ["# Memory Snapshot"]
     memory = load_memory()
@@ -132,23 +137,6 @@ def snapshot():
         name = field["name"]
         snapshot_lines.append(f"{name}: {memory.get(name, 'N/A')}")
     return "\n".join(snapshot_lines), 200, {"Content-Type": "text/plain"}
-    memory = load_memory()
-    try:
-        composite_profile = load_long_term_profile()
-    except Exception:
-        composite_profile = "No long-term profile available."
-
-    snapshot_text = f"""# Memory Snapshot
-trust_level: {memory.get('trust_level', 'N/A')}
-session_count: {memory.get('session_count', 'N/A')}
-anxiety_index: {memory.get('anxiety_index', 'N/A')}
-coke_status: {memory.get('coke_status', 'N/A')}
-edge_index: {memory.get('edge_index', 'N/A')}
-
-# Composite Profile
-{composite_profile}
-"""
-    return snapshot_text, 200, {"Content-Type": "text/plain"}
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
