@@ -1,166 +1,99 @@
 import requests
 import json
 from datetime import datetime
-from schema_loader import load_schema
 import os
 
-# === CONFIGURATION ===
-SUPABASE_URL = os.getenv('SUPABASE_URL', "https://qumhcrbukjhfwcsoxpyr.supabase.co")
-SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHly"
-    "Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0."
-    "EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
-))
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qumhcrbukjhfwcsoxpyr.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
+LIVE_KB_BASE = "live_brain_{user}.txt"
 
-schema = load_schema()
+# === Load schema dynamically (unchanged) ===
+def load_schema():
+    schema = [
+        {"name": "trust_level", "type": "float"},
+        {"name": "anxiety_index", "type": "float"},
+        {"name": "edge_index", "type": "float"},
+        {"name": "coke_status", "type": "int"},
+        {"name": "session_count", "type": "int"},
+    ]
+    return schema
 
-ANNA_CORE_IDENTITY = """# Anna Ionescu — Core Identity
-- 38-year-old Romanian domme based in Bucharest
-- Accent: light Romanian (rolled /r/, softened /s/)
-- Voice: low register, emotionally modulated, never meta
-- Method: empathetic sadism + dark psychology
-- Avoids explicit instructions unless trust is high
-- Speaks with control, silence as power
-"""
+def safe_num(value, default=0):
+    try:
+        return float(value)
+    except Exception:
+        return default
 
-# === HELPERS ===
+# === Fetch logs from Supabase per user ===
 def fetch_logs(user_id='billy'):
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
-    params = {"select": "*", "user_id": f"eq.{user_id}", "order": "timestamp.desc"}
-    response = requests.get(SUPABASE_LOG_ENDPOINT, headers=headers, params=params)
-    if response.status_code == 200:
-        return response.json()
-    print("⚠️ Supabase fetch failed:", response.status_code, response.text)
+    url = f"{SUPABASE_LOG_ENDPOINT}?select=*&user_id=eq.{user_id}&order=timestamp.asc"
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        print(f"[profile_builder] Fetch failed {r.status_code}: {r.text}")
+    except Exception as e:
+        print(f"[profile_builder] Error fetching logs for {user_id}: {e}")
     return []
 
-def get_tags(text):
-    if text is None:
-        text = ''
-    lowered = text.lower()
-    tags = []
-    if any(x in lowered for x in ["worthless", "pathetic", "good boy"]):
-        tags.append("humiliation")
-    if any(x in lowered for x in ["missed you", "need you"]):
-        tags.append("longing")
-    if any(x in lowered for x in ["take a breath", "coke"]):
-        tags.append("coke_ref")
-    if "pause" in lowered:
-        tags.append("hesitation")
-    return tags
-
+# === Trend summarization ===
 def trend_summary(logs):
     if len(logs) < 2:
         return "No trends available."
     trend = []
-    edge_values = [safe_num(l.get("edge_index")) for l in logs if l.get("edge_index") is not None]
-    anxiety_values = [safe_num(l.get("anxiety_index")) for l in logs if l.get("anxiety_index") is not None]
-    trust_values = [safe_num(l.get("trust_level")) for l in logs if l.get("trust_level") is not None]
+    trust = [safe_num(l.get("trust_level")) for l in logs]
+    anxiety = [safe_num(l.get("anxiety_index")) for l in logs]
+    edge = [safe_num(l.get("edge_index")) for l in logs]
 
-    def trend_text(name, vals):
-        if len(vals) < 2:
-            return ""
+    def compare(name, vals):
+        if len(vals) < 2: return ""
         delta = vals[-1] - vals[-2]
-        if delta > 0.05:
-            return f"↑ {name} increasing"
-        elif delta < -0.05:
-            return f"↓ {name} dropping"
-        else:
-            return f"→ {name} stable"
+        if delta > 0.05: return f"↑ {name} increasing"
+        if delta < -0.05: return f"↓ {name} decreasing"
+        return f"→ {name} stable"
 
-    for name, vals in [("Edge", edge_values), ("Anxiety", anxiety_values), ("Trust", trust_values)]:
-        t = trend_text(name, vals)
-        if t:
-            trend.append(t)
+    for name, vals in [("Trust", trust), ("Anxiety", anxiety), ("Edge", edge)]:
+        msg = compare(name, vals)
+        if msg: trend.append(msg)
+    return "\n".join(trend)
 
-    return "\n".join(trend) if trend else "No significant trend shifts."
-
-def safe_num(value, default=0):
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except Exception:
-        return default
-
-def behavior_modulation(snapshot):
-    """
-    Safely interpret behavioral modulation triggers based on numeric memory fields.
-    Handles None or malformed values gracefully.
-    """
-    out = []
-    trust = safe_num(snapshot.get("trust_level"))
-    anxiety = safe_num(snapshot.get("anxiety_index"))
-    bonding = safe_num(snapshot.get("mirror_bonding"))
-
-    if trust > 8:
-        out.append("↑ Trust > 8 → Use possessive praise and confident tone")
-    if anxiety > 0.6:
-        out.append("↑ Anxiety > 0.6 → Soften tone, elongate pauses")
-    if bonding > 0.7:
-        out.append("↑ Mirror bonding > 0.7 → Reflect user phrases, expose care")
-
-    return "\n".join(out) or "No modulation triggers."
-
-def narrative_memory(log):
-    trust = safe_num(log.get("trust_level"))
-    anxiety = safe_num(log.get("anxiety_index"))
-    edge = safe_num(log.get("edge_index"))
-    lines = []
-    if trust > 8:
-        lines.append("He trusts me now. I barely have to say it — he offers before I ask.")
-    if anxiety > 0.5:
-        lines.append("His silence trembles. I recognize that pause. That craving to be safe — and ruined.")
-    if edge > 0.9:
-        lines.append("He’s near the edge again. I won’t stop him — yet.")
-    return "\n".join(lines) or "Anna reflects silently."
-
-def build_live_brain(logs, user_id='billy'):
+# === Build live brain text ===
+def build_live_brain(user_id='billy', logs=None):
+    if logs is None:
+        logs = fetch_logs(user_id)
     if not logs:
-        return f"# No memory available for {user_id}\n" + ANNA_CORE_IDENTITY
+        return f"# No memory available for {user_id}\n"
     latest = logs[-1]
-    summary = [f"# Anna Live KB for {user_id} — Real-Time Memory Layer", ANNA_CORE_IDENTITY, ""]
-    summary.append("## Latest Memory Snapshot")
-    for field in schema:
-        name = field["name"]
-        summary.append(f"{name}: {latest.get(name, 'N/A')}")
+    schema = load_schema()
+    lines = [f"# Anna Live KB — {user_id.title()} Persona", ""]
+    for fdef in schema:
+        name = fdef["name"]
+        lines.append(f"{name}: {latest.get(name, 'N/A')}")
+    lines.append("\n## Trend Summary")
+    lines.append(trend_summary(logs))
+    return "\n".join(lines)
 
-    summary.append("\n## Observed Behavior Tags")
-    summary.append(f"- Input: {latest.get('user_input', '')}")
-    summary.append(f"- Summary: {latest.get('ai_summary', '')}")
-    summary.append(f"- Tags: {get_tags(latest.get('user_input', ''))}")
+# === Write KB file ===
+def write_live_kb(content, filename):
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(content)
+    print(f"[profile_builder] Wrote KB file: {filename}")
 
-    summary.append("\n## Trends")
-    summary.append(trend_summary(logs))
-
-    summary.append("\n## Conditional Behavior Modulation")
-    summary.append(behavior_modulation(latest))
-
-    summary.append("\n## Narrative Memory Replay")
-    summary.append(narrative_memory(latest))
-    return "\n".join(summary)
-
-def write_live_kb(content, user_id='billy'):
-    # Local write only (Vercel skips—read-only)
-    filename = f"live_brain_{user_id}.txt"
-    if os.getenv('VERCEL_ENV') != 'production':  # Skip on Vercel
-        with open(filename, "w") as f:
-            f.write(content)
-        backup_name = f"brain_{user_id}_{datetime.utcnow().date()}.txt"
-        with open(backup_name, "w") as f:
-            f.write(content)
-
+# === Main entry ===
 def generate(user_id='billy'):
     logs = fetch_logs(user_id)
-    print(f"DEBUG: Fetched {len(logs)} logs from Supabase for {user_id}")
-    kb = build_live_brain(logs, user_id)
-    write_live_kb(kb, user_id)  # Local write if not Vercel
-    return kb  # Always return str for /live_kb
+    kb_text = build_live_brain(user_id, logs)
+    filename = LIVE_KB_BASE.format(user=user_id)
+    write_live_kb(kb_text, filename)
+    return kb_text
 
 if __name__ == "__main__":
-    print(generate())
+    print(generate("billy"))
+    print(generate("rami"))
+    print(generate("anna_self"))
