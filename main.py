@@ -11,6 +11,7 @@ import subprocess
 import hmac
 import hashlib
 import time
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -23,7 +24,7 @@ WEBHOOK_SECRET = "wsec_5d8d7f341e697527d4e60a51c30d04e208aa88f30c6ec5a77a158e97c
 SUPABASE_URL = "https://qumhcrbukjhfwcsoxpyr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1bWhjcmJ1a2poZndjc294cHlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODE5MjIsImV4cCI6MjA3NTE1NzkyMn0.EYOMJ7kEZ3uvkIqcJhDVS3PCrlHx2JrkFTP6OuVg3PI"
 SUPABASE_LOG_ENDPOINT = f"{SUPABASE_URL}/rest/v1/session_logs"
-CARTESIA_API_KEY = os.getenv('CARTESIA_API_KEY', "sk_car_wkFkGShryW7kszY8uT6r7L")
+CARTESIA_API_KEY = os.getenv('CARTESIA_API_KEY', "ctsk_9f4b2a1e5d7c8f3g6h9i0j2k4l7m9n1o3p5q8r0s2t4u6v8w0x3y5z7a9b2c4d6e8f0")
 GROK_API_KEY = os.getenv('GROK_API_KEY')  # Set env on Render; no default per rule
 
 # === USER ID EXTRACTION ===
@@ -116,62 +117,100 @@ def snapshot():
         memory = load_memory(user_id)
         return jsonify(memory), 200
     except Exception as e:
+        print(f"ERROR in /snapshot: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/speak", methods=["POST"])
 def speak():
+    data = request.json
+    text = data.get('text', '')
+    if not text:
+        print("DEBUG: /speak - No text provided")
+        return jsonify({'error': 'No text provided'}), 400
+    
+    api_key = os.getenv('CARTESIA_API_KEY')
+    if not api_key:
+        print("DEBUG: /speak - CARTESIA_API_KEY missing, falling to ElevenLabs")
+        return elevenlabs_fallback(text)
+    
+    payload = {
+        "input": text,
+        "voice": "a0e99841-438c-4a64-b679-bfb90c1d443f",
+        "speed": 1.0,
+        "model": "sonic-english"
+    }
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
     try:
-        data = request.get_json()
-        user_input = data.get("text", "")
-        user_id = get_user_id()
-        memory = load_memory(user_id)
-        memory = analyze_emotion_and_update(memory, user_input)
-        save_memory(user_id, memory)
-        dynamic_vars = build_dynamic_vars(user_id, memory)
-        prompt = build_prompt(user_input, memory, dynamic_vars)
-
-        # Grok text gen (raw requests to x.ai/v1, no OpenAI SDK)
-        if not GROK_API_KEY:
-            raise ValueError("GROK_API_KEY env var missing—set on Render")
-        grok_headers = {
-            "Authorization": f"Bearer {GROK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        grok_payload = {
-            "model": "grok-beta",  # Or your custom model
-            "messages": [
-                {"role": "system", "content": "You are Anna, a warm Romanian AI agent with empathetic tones."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 500
-        }
-        grok_response = requests.post("https://api.x.ai/v1/chat/completions", headers=grok_headers, json=grok_payload)
-        if grok_response.status_code != 200:
-            raise ValueError(f"Grok API failed: {grok_response.text}")
-        grok_data = grok_response.json()
-        grok_text = grok_data["choices"][0]["message"]["content"]
-
-        # Cartesia TTS (Sonic-2 for RO, low-latency MP3)
-        cartesia_headers = {
-            "Authorization": f"Bearer {CARTESIA_API_KEY}",
-            "Content-Type": "application/json",
-            "Cartesia-Version": "2025-04-16"
-        }
-        cartesia_payload = {
-            "text": grok_text,
-            "voice": "sonic-ro-female",  # RO variant (dashboard confirm; fallback "en-US-female")
-            "model": "sonic-2-multilingual",
-            "speed": 1.0,  # Tie to session_duration_secs if needed
-            "format": "mp3"
-        }
-        tts_response = requests.post("https://api.cartesia.ai/v1/tts/bytes", headers=cartesia_headers, json=cartesia_payload)
-        if tts_response.status_code == 200:
-            OUTPUT_FILE.write_bytes(tts_response.content)
-            return send_file(OUTPUT_FILE, mimetype="audio/mpeg")
-        return jsonify({"error": f"TTS failed: {tts_response.text}"}), 500
+        print(f"DEBUG: /speak - Cartesia POST: text len {len(text)}, key starts {api_key[:10]}...")
+        response = requests.post(
+            'https://api.cartesia.ai/v1/synthesize/tts',
+            json=payload,
+            headers=headers,
+            stream=True,
+            timeout=10
+        )
+        print(f"DEBUG: /speak - Cartesia status: {response.status_code}, headers: {dict(response.headers)}")
+        response.raise_for_status()
+        
+        audio_bytes = BytesIO()
+        total_bytes = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                audio_bytes.write(chunk)
+                total_bytes += len(chunk)
+        audio_bytes.seek(0)
+        print(f"DEBUG: /speak - Streamed {total_bytes} bytes, sending MP3")
+        
+        return send_file(
+            audio_bytes,
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name='anna_cartesia.mp3'
+        )
+    
+    except requests.exceptions.RequestException as e:
+        print(f"DEBUG: /speak - Cartesia RequestException: {str(e)}")
+        return elevenlabs_fallback(text)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"DEBUG: /speak - Unexpected error: {str(e)}")
+        return jsonify({'error': f'Speak failed: {str(e)}'}), 500
+
+def elevenlabs_fallback(text):
+    try:
+        from elevenlabs import VoiceSettings, generate
+        from elevenlabs.client import ElevenLabs
+        client = ElevenLabs(api_key="sk_395144d7d8604f470abb8d983081770c371c3011e03962e7")
+        audio = generate(
+            text=text,
+            voice="zHX13TdWb6f856P3Hqta",
+            model="eleven_monolingual_v1",
+            voice_settings=VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.5,
+                style=0.5,
+                use_speaker_boost=True
+            )
+        )
+        print("DEBUG: /speak - ElevenLabs fallback generated")
+        return send_file(
+            BytesIO(audio),
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name='anna_elevenlabs.mp3'
+        )
+    except ImportError as e:
+        print(f"DEBUG: /speak - ElevenLabs ImportError: {str(e)} - Install with pip install elevenlabs")
+        return jsonify({'error': 'ElevenLabs SDK missing - pip install elevenlabs'}), 500
+    except Exception as e:
+        print(f"DEBUG: /speak - ElevenLabs fallback failed: {str(e)}")
+        import traceback
+        print(f"TRACEBACK: {traceback.format_exc()}")
+        return jsonify({'error': f'Fallback TTS failed: {str(e)}'}), 500
 
 @app.route("/log_memory", methods=["POST"])
 def log_memory():
